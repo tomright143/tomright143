@@ -112,6 +112,19 @@ export default function Workspace() {
     setAnnotations(prev => prev.filter(a => a.owner_id !== user.user_id));
   };
 
+  const exportFrame = () => {
+    const frameComments = comments.filter(c => c.timestamp != null && Math.abs(c.timestamp - currentTime) < 3);
+    const frameAnns = annotations.filter(a => Math.abs(a.timestamp - currentTime) < 1.5);
+    const thumb = review.video_type === "youtube" ? `https://i.ytimg.com/vi/${review.video_id}/hqdefault.jpg` : "";
+    const brand = user.brand_logo ? `<img src="${user.brand_logo}" style="height:36px"/>` : `<div style="font-family:monospace;letter-spacing:.2em;text-transform:uppercase;font-weight:600">REVIEW.IO</div>`;
+    const cmtHtml = frameComments.map(c => `<div style="display:flex;gap:10px;padding:10px;border-bottom:1px solid #ddd;align-items:flex-start"><img src="${c.owner_picture||''}" style="width:32px;height:32px;border-radius:50%;background:#eee"/><div><div style="font-weight:600;font-size:13px">${c.owner_name} <span style="font-family:monospace;font-size:10px;color:#5A67D8">@${formatTimecode(c.timestamp)}</span></div><div style="font-size:13px;margin-top:2px">${c.text}</div></div></div>`).join("");
+    const annHtml = frameAnns.map(a => `<li>${a.tool} by ${a.owner_name} @ ${formatTimecode(a.timestamp)}</li>`).join("");
+    const w = window.open("", "_blank");
+    w.document.write(`<!doctype html><html><head><title>Frame ${formatTimecode(currentTime)} — ${review.title}</title><style>body{font-family:system-ui;color:#111;padding:32px;max-width:780px;margin:auto}img.t{width:100%;border-radius:6px}h1{margin:8px 0}p.muted{color:#777;font-size:12px}ul{padding-left:18px}.foot{font-family:monospace;font-size:10px;color:#888;border-top:1px solid #ddd;padding-top:12px;margin-top:32px}</style></head><body>${brand}<h1>${review.title}</h1><p class="muted">Frame snapshot @ <b>${formatTimecode(currentTime)}</b> · ${new Date().toLocaleString()}</p>${thumb ? `<img class="t" src="${thumb}"/>` : ""}<h3>Annotations at this frame (${frameAnns.length})</h3><ul>${annHtml || "<li>none</li>"}</ul><h3>Comments around this frame (${frameComments.length})</h3>${cmtHtml || "<p class='muted'>No comments</p>"}<div class="foot">Review.io by Black Fxtudio · exported by ${user.email}</div></body></html>`);
+    w.document.close();
+    setTimeout(() => w.print(), 500);
+  };
+
   const handlePdfExport = useCallback(() => {
     if (user.plan === "free") { setAdOpen(true); return; }
     doExportPdf();
@@ -150,6 +163,7 @@ export default function Workspace() {
             </div>
             <div className="flex items-center gap-2">
               <span className="font-mono text-xs text-[#5A67D8]" data-testid="current-timecode">{formatTimecode(currentTime)} / {formatTimecode(duration)}</span>
+              <Button data-testid="snap-frame-button" onClick={exportFrame} className="bg-[#121214] border border-[#232326] hover:bg-[#1a1a1d] rounded-sm h-9"><FileDown className="w-4 h-4 mr-2"/><span className="font-mono text-xs uppercase tracking-wider">Snap frame</span></Button>
               <Button data-testid="share-button" onClick={shareLink} className="bg-[#121214] border border-[#232326] hover:bg-[#1a1a1d] rounded-sm h-9"><Share2 className="w-4 h-4 mr-2"/><span className="font-mono text-xs uppercase tracking-wider">Share</span></Button>
               <Button data-testid="export-pdf-button" onClick={handlePdfExport} className="bg-[#121214] border border-[#232326] hover:bg-[#1a1a1d] rounded-sm h-9"><FileDown className="w-4 h-4 mr-2"/><span className="font-mono text-xs uppercase tracking-wider">PDF</span></Button>
             </div>

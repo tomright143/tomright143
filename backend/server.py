@@ -377,7 +377,38 @@ async def get_team(request: Request):
     return rows
 
 # ===== Billing (UPI flow) =====
-PLAN_PRICES = {"creator": 299, "studio": 799, "business": 1499}
+PLAN_PRICES_DEFAULT = {"creator": 299, "studio": 799, "business": 1499}
+
+async def get_plan_prices():
+    doc = await db.config.find_one({"key": "plan_prices"}, {"_id": 0})
+    return doc["value"] if doc else PLAN_PRICES_DEFAULT
+
+@api_router.get("/billing/plans")
+async def billing_plans():
+    prices = await get_plan_prices()
+    return {"prices": prices, "upi_id": UPI_ID, "qr_image": QR_IMAGE}
+
+@api_router.post("/admin/plans")
+async def admin_set_plans(request: Request):
+    await require_admin(request)
+    body = await request.json()
+    prices = {k: int(v) for k, v in body.items() if k in PLAN_PRICES_DEFAULT}
+    await db.config.update_one({"key": "plan_prices"}, {"$set": {"key": "plan_prices", "value": prices}}, upsert=True)
+    return {"ok": True, "prices": prices}
+
+@api_router.get("/billing/upi-qr")
+async def upi_qr(plan: str, request: Request):
+    user = await get_current_user(request)
+    prices = await get_plan_prices()
+    if plan not in prices:
+        raise HTTPException(400, "Invalid plan")
+    amount = prices[plan]
+    upi_link = f"upi://pay?pa={UPI_ID}&pn=BlackFxtudio&am={amount}&cu=INR&tn=ReviewIO-{plan}"
+    import qrcode, io, base64
+    img = qrcode.make(upi_link)
+    buf = io.BytesIO(); img.save(buf, format="PNG")
+    b64 = base64.b64encode(buf.getvalue()).decode()
+    return {"qr": f"data:image/png;base64,{b64}", "upi_link": upi_link, "amount": amount}
 
 @api_router.post("/billing/upi-request")
 async def upi_request(request: Request):
@@ -386,19 +417,23 @@ async def upi_request(request: Request):
     plan = body.get("plan")
     txn_ref = body.get("txn_ref", "")
     gst_no = body.get("gst_no")
-    if plan not in PLAN_PRICES:
+    prices = await get_plan_prices()
+    if plan not in prices:
         raise HTTPException(400, "Invalid plan")
+    amount = prices[plan]
     if gst_no:
         await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"gst_no": gst_no}})
-    base = PLAN_PRICES[plan] / 1.18
-    gst = PLAN_PRICES[plan] - base
+    base = amount / 1.18
+    gst = amount - base
     pid = f"pay_{uuid.uuid4().hex[:10]}"
+    upi_link = f"upi://pay?pa={UPI_ID}&pn=BlackFxtudio&am={amount}&cu=INR&tn=ReviewIO-{plan}-{pid}"
     await db.payments.insert_one({
         "id": pid, "user_id": user["user_id"], "email": user["email"], "name": user["name"],
-        "plan": plan, "amount": PLAN_PRICES[plan], "base": round(base, 2), "gst": round(gst, 2),
-        "txn_ref": txn_ref, "status": "pending", "created_at": now_iso(),
+        "plan": plan, "amount": amount, "base": round(base, 2), "gst": round(gst, 2),
+        "txn_ref": txn_ref, "status": "pending", "upi_link": upi_link, "created_at": now_iso(),
     })
-    return {"ok": True, "payment_id": pid, "upi_id": UPI_ID, "qr_image": QR_IMAGE, "amount": PLAN_PRICES[plan]}
+    return {"ok": True, "payment_id": pid, "upi_id": UPI_ID, "qr_image": QR_IMAGE,
+            "amount": amount, "upi_link": upi_link}
 
 @api_router.get("/billing/payments")
 async def list_my_payments(request: Request):

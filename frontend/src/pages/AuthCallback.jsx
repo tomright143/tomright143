@@ -18,8 +18,9 @@ export default function AuthCallback() {
     const session_id = m[1];
     (async () => {
       try {
-        const r = await api.post("/auth/session", { session_id });
-        setUser(r.data.user);
+      const r = await api.post("/auth/session", { session_id });
+      window.localStorage.setItem("review_io_last_email", r.data.user.email);
+      setUser(r.data.user);
         window.history.replaceState(null, "", "/dashboard");
         navigate("/dashboard", { replace: true, state: { user: r.data.user } });
       } catch (e) {

@@ -5,9 +5,13 @@ import { Film, Layers, Lock, Sparkles } from "lucide-react";
 // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
 export default function Login() {
   const handleLogin = () => {
+    if (typeof window !== "undefined" && window.localStorage) {
+      // remember intent — emergent OAuth will pick best account
+    }
     const redirectUrl = window.location.origin + "/dashboard";
     window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
   };
+  const lastEmail = typeof window !== "undefined" ? window.localStorage.getItem("review_io_last_email") : null;
 
   return (
     <div className="min-h-screen bg-[#0A0A0B] text-[#EDEDF0] grid lg:grid-cols-2">
@@ -55,8 +59,9 @@ export default function Login() {
             className="w-full h-12 bg-[#5A67D8] hover:bg-[#4C51BF] text-white rounded-sm border border-[#5A67D8] font-medium"
           >
             <svg viewBox="0 0 24 24" className="w-4 h-4 mr-3"><path fill="#fff" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09Z"/><path fill="#fff" opacity=".9" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.99.66-2.26 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23Z"/><path fill="#fff" opacity=".75" d="M5.84 14.1A6.6 6.6 0 0 1 5.5 12c0-.73.13-1.44.34-2.1V7.07H2.18A11 11 0 0 0 1 12c0 1.78.43 3.46 1.18 4.94l3.66-2.84Z"/><path fill="#fff" opacity=".55" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.83C6.71 7.31 9.14 5.38 12 5.38Z"/></svg>
-            Continue with Google
+            {lastEmail ? `Continue as ${lastEmail}` : "Continue with Google"}
           </Button>
+          {lastEmail && <button onClick={() => { window.localStorage.removeItem("review_io_last_email"); window.location.reload(); }} data-testid="use-different-account" className="w-full text-center font-mono text-[10px] uppercase tracking-wider text-[#5C5C66] hover:text-white">Use a different account</button>}
           <div className="grid grid-cols-3 gap-3 pt-2 text-xs font-mono text-[#5C5C66]">
             <div className="flex flex-col gap-1.5"><Layers className="w-4 h-4 text-[#5A67D8]"/><span>Vector tools</span></div>
             <div className="flex flex-col gap-1.5"><Sparkles className="w-4 h-4 text-[#5A67D8]"/><span>Reaction stamps</span></div>

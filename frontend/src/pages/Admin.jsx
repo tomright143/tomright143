@@ -20,12 +20,16 @@ export default function Admin() {
   const [newAdmin, setNewAdmin] = useState("");
   const [newAd, setNewAd] = useState({ title: "", video_url: "", image_url: "", duration: 15, budget: 0, expiry: "" });
 
+  const [prices, setPrices] = useState({ creator: 299, studio: 799, business: 1499 });
+  const savePrices = async () => { await api.post("/admin/plans", prices); toast.success("Plan prices updated"); };
+
   const load = async () => {
-    const [s, u, p, a, ad] = await Promise.all([
+    const [s, u, p, a, ad, pl] = await Promise.all([
       api.get("/admin/stats"), api.get("/admin/users"), api.get("/admin/payments"),
-      api.get("/admin/admins"), api.get("/admin/ads"),
+      api.get("/admin/admins"), api.get("/admin/ads"), api.get("/billing/plans"),
     ]);
     setStats(s.data); setUsers(u.data); setPayments(p.data); setAdmins(a.data); setAds(ad.data);
+    setPrices(pl.data.prices);
   };
   useEffect(() => { if (user?.is_admin) load(); }, [user]);
 
@@ -37,7 +41,7 @@ export default function Admin() {
   const addAd = async () => { if (!newAd.title) return; await api.post("/admin/ads", newAd); setNewAd({ title: "", video_url: "", image_url: "", duration: 15, budget: 0, expiry: "" }); load(); };
   const delAd = async (id) => { await api.delete(`/admin/ads/${id}`); load(); };
 
-  const TABS = [["stats","Overview"],["payments","Payments"],["ads","Ads"],["admins","Admins"],["users","Users"]];
+  const TABS = [["stats","Overview"],["pricing","Pricing"],["payments","Payments"],["ads","Ads"],["admins","Admins"],["users","Users"]];
 
   return (
     <div className="min-h-screen bg-[#0A0A0B] text-[#EDEDF0]">
@@ -57,6 +61,19 @@ export default function Admin() {
                 <div key={l} className="border border-[#232326] rounded-sm bg-[#121214] p-4"><div className="text-2xl font-semibold">{v}</div><div className="font-mono text-[10px] uppercase tracking-wider text-[#8A8A93] mt-1">{l}</div></div>
               ))}
               <div className="border border-[#232326] rounded-sm bg-[#121214] p-4 col-span-2 md:col-span-4"><p className="font-mono text-[10px] uppercase text-[#8A8A93] mb-2">By plan</p><div className="flex gap-4 flex-wrap text-sm">{Object.entries(stats.by_plan).map(([k,v]) => <span key={k}><b className="text-[#5A67D8]">{v}</b> {k}</span>)}</div></div>
+            </div>
+          )}
+          {tab === "pricing" && (
+            <div className="border border-[#232326] rounded-sm bg-[#121214] p-5 max-w-md" data-testid="admin-pricing">
+              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#8A8A93] mb-4">Plan prices (GST 18% inclusive)</p>
+              {["creator","studio","business"].map(k => (
+                <div key={k} className="flex items-center gap-3 mb-3">
+                  <span className="font-mono text-xs uppercase tracking-wider w-24">{k}</span>
+                  <span className="font-mono text-xs">₹</span>
+                  <Input data-testid={`price-${k}`} type="number" value={prices[k]} onChange={e => setPrices({...prices, [k]: +e.target.value})} className="bg-[#0A0A0B] border-[#232326] max-w-[140px]"/>
+                </div>
+              ))}
+              <Button onClick={savePrices} data-testid="save-prices" className="bg-[#5A67D8] hover:bg-[#4C51BF] rounded-sm mt-2">Save</Button>
             </div>
           )}
           {tab === "payments" && (

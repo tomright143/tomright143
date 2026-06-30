@@ -27,6 +27,10 @@ export default function Pricing() {
   const request = async (plan) => {
     if (plan === "free") return;
     setSelected(plan);
+    try {
+      const r = await api.get(`/billing/upi-qr?plan=${plan}`);
+      setUpi({ qr_image: r.data.qr, upi_id: "tomright143-1@okhdfcbank", upi_link: r.data.upi_link, amount: r.data.amount });
+    } catch { toast.error("Could not generate QR"); }
   };
 
   const submit = async () => {
@@ -67,9 +71,12 @@ export default function Pricing() {
 
         {selected && upi && (
           <div className="mt-10 border border-[#5A67D8] rounded-sm bg-[#121214] p-6 max-w-2xl mx-auto" data-testid="upi-pay-panel">
-            <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#5A67D8] mb-3">Pay ₹{PLANS.find(x => x.id === selected).price} via UPI for {selected}</p>
+            <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#5A67D8] mb-3">Pay ₹{upi.amount} via UPI for {selected} · amount auto-locked</p>
             <div className="grid sm:grid-cols-2 gap-6">
-              <div><img src={upi.qr_image} alt="UPI QR" className="w-full rounded-sm border border-[#232326]" data-testid="upi-qr"/></div>
+              <div>
+                <img src={upi.qr_image} alt="UPI QR" className="w-full rounded-sm border border-[#232326] bg-white p-2" data-testid="upi-qr"/>
+                <a href={upi.upi_link} className="block mt-2 text-center font-mono text-[10px] uppercase tracking-wider text-[#5A67D8] hover:underline" data-testid="upi-deeplink">Open in UPI app →</a>
+              </div>
               <div className="space-y-4">
                 <div><Label className="font-mono text-[10px] uppercase tracking-wider text-[#8A8A93]">UPI ID</Label>
                   <div className="flex gap-2 mt-1"><Input value={upi.upi_id} readOnly className="bg-[#0A0A0B] border-[#232326] font-mono text-xs" data-testid="upi-id"/><Button onClick={() => { navigator.clipboard.writeText(upi.upi_id); toast.success("Copied"); }} className="bg-[#0A0A0B] border border-[#232326] rounded-sm"><Copy className="w-3.5 h-3.5"/></Button></div>

@@ -1,15 +1,14 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Cookie, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 import uuid
-import json  # noqa: F401
+import re
 from pathlib import Path
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict
 from datetime import datetime, timezone, timedelta
 import httpx
 
@@ -24,40 +23,25 @@ app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
 EMERGENT_AUTH_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
+DEFAULT_ADMIN = "tom@blackfx.net"
+UPI_ID = "tomright143-1@okhdfcbank"
+QR_IMAGE = "https://customer-assets.emergentagent.com/job_stream-annotate-app/artifacts/cszxr9k2_IMG_0135.jpeg"
 
 # ===== Models =====
-class User(BaseModel):
-    user_id: str
-    email: str
-    name: str
-    picture: Optional[str] = None
-    plan: str = "free"  # free | creator | studio
-    brand_logo: Optional[str] = None  # base64 data url for studio
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
 class ReviewCreate(BaseModel):
     title: str
     video_url: str
-    video_type: str  # youtube | vimeo | gdrive
-    allow_download: bool = False
-
-class Review(BaseModel):
-    id: str
-    owner_id: str
-    title: str
-    video_url: str
     video_type: str
-    video_id: str  # extracted id for embedding
     allow_download: bool = False
-    created_at: datetime
 
 class AnnotationCreate(BaseModel):
     review_id: str
-    timestamp: float  # in seconds
-    tool: str  # arrow | circle | dashed | freehand | tick | cross | like | impressed | dislike | text
+    timestamp: float
+    tool: str
     color: str = "#5A67D8"
-    points: List[Dict[str, float]]  # [{x: 0-1, y: 0-1}, ...] normalized
-    text: Optional[str] = None  # for text/link tool
+    brush: float = 3
+    points: List[Dict[str, float]]
+    text: Optional[str] = None
     link: Optional[str] = None
 
 class CommentCreate(BaseModel):
@@ -67,8 +51,15 @@ class CommentCreate(BaseModel):
     parent_id: Optional[str] = None
     mentions: List[str] = []
 
-# ===== Auth helpers =====
-async def get_current_user(request: Request) -> User:
+def now_iso():
+    return datetime.now(timezone.utc).isoformat()
+
+def is_admin_user(email: str) -> bool:
+    if email == DEFAULT_ADMIN:
+        return True
+    return False  # checked async via db elsewhere
+
+async def get_current_user(request: Request):
     token = request.cookies.get("session_token")
     if not token:
         auth = request.headers.get("Authorization", "")
@@ -86,31 +77,37 @@ async def get_current_user(request: Request) -> User:
         exp = exp.replace(tzinfo=timezone.utc)
     if exp < datetime.now(timezone.utc):
         raise HTTPException(401, "Session expired")
+    # rolling: extend if more than 1 day used
+    if (exp - datetime.now(timezone.utc)) < timedelta(days=6):
+        new_exp = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
+        await db.user_sessions.update_one({"session_token": token}, {"$set": {"expires_at": new_exp}})
     udoc = await db.users.find_one({"user_id": sess["user_id"]}, {"_id": 0})
     if not udoc:
         raise HTTPException(401, "User not found")
-    return User(**udoc)
+    return udoc
 
-def extract_video_info(url: str) -> Dict[str, str]:
-    import re
-    # YouTube
+async def require_admin(request: Request):
+    user = await get_current_user(request)
+    admin_doc = await db.admins.find_one({"email": user["email"]}, {"_id": 0})
+    if user["email"] != DEFAULT_ADMIN and not admin_doc:
+        raise HTTPException(403, "Admin only")
+    return user
+
+def extract_video_info(url: str):
     m = re.search(r"(?:youtube\.com/(?:watch\?v=|embed/|shorts/)|youtu\.be/)([A-Za-z0-9_\-]{6,})", url)
-    if m:
-        return {"video_type": "youtube", "video_id": m.group(1)}
-    # Vimeo
+    if m: return {"video_type": "youtube", "video_id": m.group(1)}
     m = re.search(r"vimeo\.com/(\d+)", url)
-    if m:
-        return {"video_type": "vimeo", "video_id": m.group(1)}
-    # Google Drive
+    if m: return {"video_type": "vimeo", "video_id": m.group(1)}
     m = re.search(r"drive\.google\.com/file/d/([A-Za-z0-9_\-]+)", url)
-    if m:
-        return {"video_type": "gdrive", "video_id": m.group(1)}
+    if m: return {"video_type": "gdrive", "video_id": m.group(1)}
     m = re.search(r"drive\.google\.com/open\?id=([A-Za-z0-9_\-]+)", url)
-    if m:
+    if m: return {"video_type": "gdrive", "video_id": m.group(1)}
+    m = re.search(r"[?&]id=([A-Za-z0-9_\-]{10,})", url)
+    if m and "drive.google" in url:
         return {"video_type": "gdrive", "video_id": m.group(1)}
     return {"video_type": "unknown", "video_id": url}
 
-# ===== Auth Routes =====
+# ===== Auth =====
 @api_router.post("/auth/session")
 async def create_session(request: Request, response: Response):
     body = await request.json()
@@ -123,36 +120,42 @@ async def create_session(request: Request, response: Response):
             raise HTTPException(401, "Invalid session_id")
         data = r.json()
     email = data["email"]
-    # find or create user
+    # capture referral if present
+    ref = body.get("ref")
     existing = await db.users.find_one({"email": email}, {"_id": 0})
     if existing:
         user_id = existing["user_id"]
-        await db.users.update_one({"user_id": user_id}, {"$set": {"name": data["name"], "picture": data.get("picture")}})
+        await db.users.update_one({"user_id": user_id}, {"$set": {"name": data["name"], "picture": data.get("picture"), "last_login": now_iso()}})
     else:
         user_id = f"user_{uuid.uuid4().hex[:12]}"
         await db.users.insert_one({
             "user_id": user_id, "email": email, "name": data["name"],
             "picture": data.get("picture"), "plan": "free",
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "gst_no": None, "company": None, "brand_logo": None,
+            "referred_by": ref, "referrals_count": 0,
+            "created_at": now_iso(), "last_login": now_iso(),
         })
+        # credit referrer
+        if ref:
+            await db.users.update_one({"user_id": ref}, {"$inc": {"referrals_count": 1}})
     session_token = data["session_token"]
-    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    expires_at = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
     await db.user_sessions.insert_one({
         "user_id": user_id, "session_token": session_token,
-        "expires_at": expires_at.isoformat(),
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "expires_at": expires_at, "created_at": now_iso(),
     })
-    response.set_cookie(
-        key="session_token", value=session_token,
-        max_age=7*24*60*60, httponly=True, secure=True, samesite="none", path="/",
-    )
+    response.set_cookie("session_token", session_token, max_age=7*24*60*60,
+                        httponly=True, secure=True, samesite="none", path="/")
     udoc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
     return {"user": udoc}
 
 @api_router.get("/auth/me")
 async def me(request: Request):
-    user = await get_current_user(request)
-    return user.model_dump()
+    u = await get_current_user(request)
+    # add admin flag
+    admin_doc = await db.admins.find_one({"email": u["email"]}, {"_id": 0})
+    u["is_admin"] = (u["email"] == DEFAULT_ADMIN) or bool(admin_doc)
+    return u
 
 @api_router.post("/auth/logout")
 async def logout(request: Request, response: Response):
@@ -168,39 +171,74 @@ async def create_review(payload: ReviewCreate, request: Request):
     user = await get_current_user(request)
     info = extract_video_info(payload.video_url)
     if info["video_type"] == "unknown":
-        raise HTTPException(400, "Unsupported video URL. Use YouTube, Vimeo, or Google Drive.")
+        raise HTTPException(400, "Unsupported URL. Use YouTube, Vimeo, or Google Drive.")
     rid = f"rev_{uuid.uuid4().hex[:12]}"
+    share_token = f"sh_{uuid.uuid4().hex[:14]}"
     doc = {
-        "id": rid, "owner_id": user.user_id, "title": payload.title,
-        "video_url": payload.video_url, "video_type": info["video_type"],
-        "video_id": info["video_id"], "allow_download": payload.allow_download,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "id": rid, "owner_id": user["user_id"], "owner_name": user["name"],
+        "title": payload.title, "video_url": payload.video_url,
+        "video_type": info["video_type"], "video_id": info["video_id"],
+        "allow_download": payload.allow_download, "share_token": share_token,
+        "view_count": 0, "stars": 0, "created_at": now_iso(),
     }
     await db.reviews.insert_one(doc)
     doc.pop("_id", None)
+    # Referral bonus: 3 projects + 10 referrals = free creator month
+    proj_count = await db.reviews.count_documents({"owner_id": user["user_id"]})
+    if proj_count >= 3 and user.get("referrals_count", 0) >= 10 and user["plan"] == "free":
+        await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"plan": "creator", "plan_until": (datetime.now(timezone.utc)+timedelta(days=30)).isoformat(), "bonus": True}})
     return doc
 
 @api_router.get("/reviews")
 async def list_reviews(request: Request):
     user = await get_current_user(request)
-    rows = await db.reviews.find({"owner_id": user.user_id}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    rows = await db.reviews.find({"owner_id": user["user_id"]}, {"_id": 0}).sort("created_at", -1).to_list(500)
     return rows
 
 @api_router.get("/reviews/{review_id}")
 async def get_review(review_id: str, request: Request):
     await get_current_user(request)
     r = await db.reviews.find_one({"id": review_id}, {"_id": 0})
-    if not r:
-        raise HTTPException(404, "Not found")
+    if not r: raise HTTPException(404, "Not found")
     return r
 
 @api_router.delete("/reviews/{review_id}")
-async def delete_review(review_id: str, request: Request):
+async def del_review(review_id: str, request: Request):
     user = await get_current_user(request)
-    await db.reviews.delete_one({"id": review_id, "owner_id": user.user_id})
+    await db.reviews.delete_one({"id": review_id, "owner_id": user["user_id"]})
     await db.annotations.delete_many({"review_id": review_id})
     await db.comments.delete_many({"review_id": review_id})
     return {"ok": True}
+
+@api_router.post("/reviews/{review_id}/star")
+async def star_review(review_id: str, request: Request):
+    await get_current_user(request)
+    await db.reviews.update_one({"id": review_id}, {"$inc": {"stars": 1}})
+    return {"ok": True}
+
+# ===== Public shared access =====
+@api_router.get("/shared/{token}")
+async def get_shared(token: str, request: Request):
+    r = await db.reviews.find_one({"share_token": token}, {"_id": 0})
+    if not r: raise HTTPException(404, "Not found")
+    # Increment view (no auth needed for view tracking)
+    new_count = (r.get("view_count") or 0) + 1
+    await db.reviews.update_one({"id": r["id"]}, {"$set": {"view_count": new_count}})
+    # User auth optional
+    try:
+        u = await get_current_user(request)
+        viewer_email = u["email"]
+        # track per-viewer view count for ad-after-3 logic
+        await db.share_views.update_one(
+            {"review_id": r["id"], "viewer": viewer_email},
+            {"$inc": {"count": 1}, "$set": {"last": now_iso()}},
+            upsert=True,
+        )
+        v = await db.share_views.find_one({"review_id": r["id"], "viewer": viewer_email}, {"_id": 0})
+        viewer_count = v["count"] if v else 1
+    except Exception:
+        viewer_count = 1
+    return {"review": r, "viewer_count": viewer_count, "show_ad": viewer_count >= 3 and (viewer_count - 3) % 3 == 0}
 
 # ===== Annotations =====
 @api_router.post("/annotations")
@@ -208,26 +246,25 @@ async def create_annotation(payload: AnnotationCreate, request: Request):
     user = await get_current_user(request)
     aid = f"ann_{uuid.uuid4().hex[:10]}"
     doc = {
-        "id": aid, "review_id": payload.review_id, "owner_id": user.user_id,
-        "owner_name": user.name, "owner_picture": user.picture,
+        "id": aid, "review_id": payload.review_id, "owner_id": user["user_id"],
+        "owner_name": user["name"], "owner_picture": user.get("picture"),
         "timestamp": payload.timestamp, "tool": payload.tool, "color": payload.color,
-        "points": payload.points, "text": payload.text, "link": payload.link,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "brush": payload.brush, "points": payload.points,
+        "text": payload.text, "link": payload.link, "created_at": now_iso(),
     }
     await db.annotations.insert_one(doc)
     doc.pop("_id", None)
     return doc
 
 @api_router.get("/annotations/{review_id}")
-async def list_annotations(review_id: str, request: Request):
-    await get_current_user(request)
-    rows = await db.annotations.find({"review_id": review_id}, {"_id": 0}).sort("timestamp", 1).to_list(1000)
+async def list_annotations(review_id: str):
+    rows = await db.annotations.find({"review_id": review_id}, {"_id": 0}).sort("timestamp", 1).to_list(2000)
     return rows
 
 @api_router.delete("/annotations/{ann_id}")
 async def del_annotation(ann_id: str, request: Request):
     user = await get_current_user(request)
-    await db.annotations.delete_one({"id": ann_id, "owner_id": user.user_id})
+    await db.annotations.delete_one({"id": ann_id, "owner_id": user["user_id"]})
     return {"ok": True}
 
 # ===== Comments =====
@@ -236,83 +273,233 @@ async def create_comment(payload: CommentCreate, request: Request):
     user = await get_current_user(request)
     cid = f"cmt_{uuid.uuid4().hex[:10]}"
     doc = {
-        "id": cid, "review_id": payload.review_id, "owner_id": user.user_id,
-        "owner_name": user.name, "owner_picture": user.picture,
+        "id": cid, "review_id": payload.review_id, "owner_id": user["user_id"],
+        "owner_name": user["name"], "owner_picture": user.get("picture"),
         "text": payload.text, "timestamp": payload.timestamp,
         "parent_id": payload.parent_id, "mentions": payload.mentions,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": now_iso(),
     }
     await db.comments.insert_one(doc)
     doc.pop("_id", None)
     return doc
 
 @api_router.get("/comments/{review_id}")
-async def list_comments(review_id: str, request: Request):
-    await get_current_user(request)
-    rows = await db.comments.find({"review_id": review_id}, {"_id": 0}).sort("created_at", 1).to_list(1000)
+async def list_comments(review_id: str):
+    rows = await db.comments.find({"review_id": review_id}, {"_id": 0}).sort("created_at", 1).to_list(2000)
     return rows
-
-# ===== Subscription (MOCKED Razorpay) =====
-@api_router.post("/billing/subscribe")
-async def subscribe(request: Request):
-    user = await get_current_user(request)
-    body = await request.json()
-    plan = body.get("plan")
-    if plan not in ("free", "creator", "studio"):
-        raise HTTPException(400, "Invalid plan")
-    # MOCKED: instantly upgrade — in real, integrate Razorpay order_id flow
-    await db.users.update_one({"user_id": user.user_id}, {"$set": {"plan": plan}})
-    udoc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0})
-    return {"ok": True, "mocked": True, "user": udoc}
-
-@api_router.post("/settings/brand-logo")
-async def set_brand_logo(request: Request):
-    user = await get_current_user(request)
-    if user.plan != "studio":
-        raise HTTPException(403, "Studio plan required for white-label branding")
-    body = await request.json()
-    logo = body.get("brand_logo", "")
-    await db.users.update_one({"user_id": user.user_id}, {"$set": {"brand_logo": logo}})
-    return {"ok": True}
 
 @api_router.get("/team")
 async def get_team(request: Request):
     await get_current_user(request)
-    # Returns all users as the "internal team" for @mentions and P2P
-    rows = await db.users.find({}, {"_id": 0, "user_id": 1, "name": 1, "email": 1, "picture": 1}).to_list(200)
+    rows = await db.users.find({}, {"_id": 0, "user_id": 1, "name": 1, "email": 1, "picture": 1}).to_list(500)
+    return rows
+
+# ===== Billing (UPI flow) =====
+PLAN_PRICES = {"creator": 299, "studio": 799, "business": 1499}
+
+@api_router.post("/billing/upi-request")
+async def upi_request(request: Request):
+    user = await get_current_user(request)
+    body = await request.json()
+    plan = body.get("plan")
+    txn_ref = body.get("txn_ref", "")
+    gst_no = body.get("gst_no")
+    if plan not in PLAN_PRICES:
+        raise HTTPException(400, "Invalid plan")
+    if gst_no:
+        await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"gst_no": gst_no}})
+    base = PLAN_PRICES[plan] / 1.18
+    gst = PLAN_PRICES[plan] - base
+    pid = f"pay_{uuid.uuid4().hex[:10]}"
+    await db.payments.insert_one({
+        "id": pid, "user_id": user["user_id"], "email": user["email"], "name": user["name"],
+        "plan": plan, "amount": PLAN_PRICES[plan], "base": round(base, 2), "gst": round(gst, 2),
+        "txn_ref": txn_ref, "status": "pending", "created_at": now_iso(),
+    })
+    return {"ok": True, "payment_id": pid, "upi_id": UPI_ID, "qr_image": QR_IMAGE, "amount": PLAN_PRICES[plan]}
+
+@api_router.get("/billing/payments")
+async def list_my_payments(request: Request):
+    user = await get_current_user(request)
+    rows = await db.payments.find({"user_id": user["user_id"]}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return rows
+
+@api_router.get("/billing/upi-info")
+async def upi_info():
+    return {"upi_id": UPI_ID, "qr_image": QR_IMAGE}
+
+@api_router.post("/settings/profile")
+async def update_profile(request: Request):
+    user = await get_current_user(request)
+    body = await request.json()
+    updates = {}
+    for f in ("gst_no", "company", "brand_logo"):
+        if f in body:
+            updates[f] = body[f]
+    if user["plan"] != "studio" and "brand_logo" in updates:
+        updates.pop("brand_logo")
+    if updates:
+        await db.users.update_one({"user_id": user["user_id"]}, {"$set": updates})
+    return {"ok": True}
+
+# ===== Dashboard analytics =====
+@api_router.get("/me/stats")
+async def my_stats(request: Request):
+    user = await get_current_user(request)
+    total = await db.reviews.count_documents({"owner_id": user["user_id"]})
+    # this month
+    start_month = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+    this_month = await db.reviews.count_documents({"owner_id": user["user_id"], "created_at": {"$gte": start_month}})
+    total_stars = 0
+    async for r in db.reviews.find({"owner_id": user["user_id"]}, {"_id": 0, "stars": 1}):
+        total_stars += r.get("stars") or 0
+    total_annotations = await db.annotations.count_documents({"owner_id": user["user_id"]})
+    return {
+        "total_projects": total, "monthly_projects": this_month,
+        "total_stars": total_stars, "total_annotations": total_annotations,
+        "referrals": user.get("referrals_count", 0),
+        "bonus_eligible": (user.get("referrals_count", 0) >= 10 and total >= 3),
+    }
+
+# ===== Admin =====
+@api_router.get("/admin/stats")
+async def admin_stats(request: Request):
+    await require_admin(request)
+    users_total = await db.users.count_documents({})
+    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    active_today = await db.users.count_documents({"last_login": {"$gte": today}})
+    by_plan = {}
+    async for u in db.users.find({}, {"_id": 0, "plan": 1}):
+        by_plan[u.get("plan", "free")] = by_plan.get(u.get("plan", "free"), 0) + 1
+    reviews_total = await db.reviews.count_documents({})
+    pending_payments = await db.payments.count_documents({"status": "pending"})
+    return {"users_total": users_total, "active_today": active_today, "by_plan": by_plan,
+            "reviews_total": reviews_total, "pending_payments": pending_payments}
+
+@api_router.get("/admin/users")
+async def admin_users(request: Request):
+    await require_admin(request)
+    rows = await db.users.find({}, {"_id": 0}).sort("last_login", -1).to_list(500)
+    return rows
+
+@api_router.get("/admin/payments")
+async def admin_payments(request: Request):
+    await require_admin(request)
+    rows = await db.payments.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return rows
+
+@api_router.post("/admin/payments/{pid}/approve")
+async def approve_payment(pid: str, request: Request):
+    await require_admin(request)
+    p = await db.payments.find_one({"id": pid}, {"_id": 0})
+    if not p: raise HTTPException(404, "Not found")
+    until = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+    await db.users.update_one({"user_id": p["user_id"]}, {"$set": {"plan": p["plan"], "plan_until": until}})
+    await db.payments.update_one({"id": pid}, {"$set": {"status": "approved", "approved_at": now_iso()}})
+    # generate invoice
+    inv_id = f"inv_{uuid.uuid4().hex[:10]}"
+    await db.invoices.insert_one({
+        "id": inv_id, "user_id": p["user_id"], "email": p["email"], "name": p["name"],
+        "plan": p["plan"], "amount": p["amount"], "base": p["base"], "gst": p["gst"],
+        "payment_id": pid, "created_at": now_iso(),
+    })
+    return {"ok": True}
+
+@api_router.get("/admin/admins")
+async def list_admins(request: Request):
+    await require_admin(request)
+    rows = await db.admins.find({}, {"_id": 0}).to_list(100)
+    rows.append({"email": DEFAULT_ADMIN, "default": True})
+    return rows
+
+@api_router.post("/admin/admins")
+async def add_admin(request: Request):
+    await require_admin(request)
+    body = await request.json()
+    email = body.get("email", "").strip().lower()
+    if not email: raise HTTPException(400, "email required")
+    await db.admins.update_one({"email": email}, {"$set": {"email": email, "added_at": now_iso()}}, upsert=True)
+    return {"ok": True}
+
+@api_router.delete("/admin/admins/{email}")
+async def del_admin(email: str, request: Request):
+    await require_admin(request)
+    if email == DEFAULT_ADMIN: raise HTTPException(400, "Cannot remove default")
+    await db.admins.delete_one({"email": email})
+    return {"ok": True}
+
+@api_router.get("/admin/ads")
+async def list_ads(request: Request):
+    await require_admin(request)
+    return await db.ads.find({}, {"_id": 0}).sort("created_at", -1).to_list(200)
+
+@api_router.post("/admin/ads")
+async def add_ad(request: Request):
+    await require_admin(request)
+    body = await request.json()
+    aid = f"ad_{uuid.uuid4().hex[:8]}"
+    doc = {
+        "id": aid, "title": body.get("title", "Sponsored"),
+        "video_url": body.get("video_url"), "image_url": body.get("image_url"),
+        "duration": body.get("duration", 15), "budget": body.get("budget", 0),
+        "expiry": body.get("expiry"), "active": True,
+        "plays": 0, "clicks": 0, "created_at": now_iso(),
+    }
+    await db.ads.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+@api_router.delete("/admin/ads/{aid}")
+async def del_ad(aid: str, request: Request):
+    await require_admin(request)
+    await db.ads.delete_one({"id": aid})
+    return {"ok": True}
+
+@api_router.get("/ads/serve")
+async def serve_ad():
+    ad = await db.ads.find_one({"active": True}, {"_id": 0}, sort=[("plays", 1)])
+    if ad:
+        await db.ads.update_one({"id": ad["id"]}, {"$inc": {"plays": 1}})
+        # daily play count
+        day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        await db.ad_plays.update_one({"ad_id": ad["id"], "day": day}, {"$inc": {"count": 1}}, upsert=True)
+    return ad or {"id": "default", "title": "Sponsored placement", "duration": 15}
+
+@api_router.post("/ads/{aid}/click")
+async def click_ad(aid: str):
+    await db.ads.update_one({"id": aid}, {"$inc": {"clicks": 1}})
+    return {"ok": True}
+
+# ===== Invoices =====
+@api_router.get("/invoices")
+async def list_invoices(request: Request):
+    user = await get_current_user(request)
+    rows = await db.invoices.find({"user_id": user["user_id"]}, {"_id": 0}).sort("created_at", -1).to_list(200)
     return rows
 
 # ===== WebRTC Signaling =====
 class SignalHub:
     def __init__(self):
         self.rooms: Dict[str, Dict[str, WebSocket]] = {}
-    async def connect(self, room: str, peer: str, ws: WebSocket):
+    async def connect(self, room, peer, ws):
         await ws.accept()
         self.rooms.setdefault(room, {})[peer] = ws
-        # notify others
         await self.broadcast(room, peer, {"type": "peer-joined", "peer": peer})
-        # send current peers list
-        peers = [p for p in self.rooms[room].keys() if p != peer]
-        await ws.send_json({"type": "peers", "peers": peers})
-    def disconnect(self, room: str, peer: str):
+        await ws.send_json({"type": "peers", "peers": [p for p in self.rooms[room].keys() if p != peer]})
+    def disconnect(self, room, peer):
         if room in self.rooms and peer in self.rooms[room]:
             del self.rooms[room][peer]
-            if not self.rooms[room]:
-                del self.rooms[room]
-    async def broadcast(self, room: str, sender: str, msg: dict):
+            if not self.rooms[room]: del self.rooms[room]
+    async def broadcast(self, room, sender, msg):
         for p, ws in list(self.rooms.get(room, {}).items()):
             if p != sender:
-                try:
-                    await ws.send_json(msg)
-                except Exception:
-                    pass
-    async def send_to(self, room: str, target: str, msg: dict):
+                try: await ws.send_json(msg)
+                except Exception: pass
+    async def send_to(self, room, target, msg):
         ws = self.rooms.get(room, {}).get(target)
         if ws:
-            try:
-                await ws.send_json(msg)
-            except Exception:
-                pass
+            try: await ws.send_json(msg)
+            except Exception: pass
 
 hub = SignalHub()
 
@@ -324,10 +511,8 @@ async def ws_signal(ws: WebSocket, review_id: str, peer: str):
             data = await ws.receive_json()
             target = data.get("target")
             data["from"] = peer
-            if target:
-                await hub.send_to(review_id, target, data)
-            else:
-                await hub.broadcast(review_id, peer, data)
+            if target: await hub.send_to(review_id, target, data)
+            else: await hub.broadcast(review_id, peer, data)
     except WebSocketDisconnect:
         hub.disconnect(review_id, peer)
         await hub.broadcast(review_id, peer, {"type": "peer-left", "peer": peer})
@@ -336,7 +521,7 @@ async def ws_signal(ws: WebSocket, review_id: str, peer: str):
 
 @api_router.get("/")
 async def root():
-    return {"message": "Zero-Storage Video Review API", "status": "ok"}
+    return {"message": "Review.io API", "status": "ok"}
 
 app.include_router(api_router)
 
@@ -348,7 +533,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 @app.on_event("shutdown")

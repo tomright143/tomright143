@@ -20,11 +20,18 @@ export default function TopNav() {
           ) : (
             <>
               <div className="w-6 h-6 rounded-sm bg-[#5A67D8] flex items-center justify-center"><Film className="w-3.5 h-3.5 text-white"/></div>
-              <span className="font-mono text-xs tracking-[0.2em] uppercase">Zerostore</span>
+              <span className="font-mono text-xs tracking-[0.2em] uppercase">Review.io</span>
             </>
           )}
         </Link>
         <nav className="flex items-center gap-2">
+          {user?.is_admin && (
+            <Link to="/admin" className="hidden sm:inline-block">
+              <Button variant="ghost" className="text-[#5A67D8] hover:text-white hover:bg-[#121214] h-9 rounded-sm" data-testid="nav-admin">
+                <span className="font-mono text-xs uppercase tracking-wider">Admin</span>
+              </Button>
+            </Link>
+          )}
           <Link to="/pricing" className="hidden sm:inline-block">
             <Button variant="ghost" className="text-[#8A8A93] hover:text-white hover:bg-[#121214] h-9 rounded-sm" data-testid="nav-pricing">
               <span className="font-mono text-xs uppercase tracking-wider">Pricing</span>

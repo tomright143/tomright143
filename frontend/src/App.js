@@ -9,6 +9,8 @@ import Workspace from "@/pages/Workspace";
 import Pricing from "@/pages/Pricing";
 import Settings from "@/pages/Settings";
 import AuthCallback from "@/pages/AuthCallback";
+import Admin from "@/pages/Admin";
+import SharedReview from "@/pages/SharedReview";
 import { Toaster } from "sonner";
 
 function Router() {
@@ -25,6 +27,8 @@ function Router() {
       <Route path="/workspace/:id" element={<ProtectedRoute><Workspace /></ProtectedRoute>} />
       <Route path="/pricing" element={<ProtectedRoute><Pricing /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+      <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
+      <Route path="/shared/:token" element={<SharedReview />} />
     </Routes>
   );
 }

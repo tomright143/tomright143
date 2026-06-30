@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 
 // Renders annotations at current timestamp and captures new ones
-export default function AnnotationCanvas({ annotations, currentTime, tool, color, onAdd, enabled }) {
+export default function AnnotationCanvas({ annotations, currentTime, tool, color, brush = 3, onAdd, enabled }) {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
   const [drawing, setDrawing] = useState(false);
@@ -19,9 +19,9 @@ export default function AnnotationCanvas({ annotations, currentTime, tool, color
     visible.forEach(a => drawAnnotation(ctx, a, w, h));
 
     if (drawing && points.length > 0) {
-      drawAnnotation(ctx, { tool, color, points }, w, h, true);
+      drawAnnotation(ctx, { tool, color, points, brush }, w, h, true);
     }
-  }, [annotations, currentTime, drawing, points, tool, color]);
+  }, [annotations, currentTime, drawing, points, tool, color, brush]);
 
   // Resize canvas to match container
   useEffect(() => {
@@ -50,7 +50,7 @@ export default function AnnotationCanvas({ annotations, currentTime, tool, color
     e.preventDefault();
     if (["like", "impressed", "dislike", "tick", "cross"].includes(tool)) {
       const p = getPoint(e);
-      onAdd({ tool, color, points: [p] });
+      onAdd({ tool, color, brush, points: [p] });
       return;
     }
     setDrawing(true);
@@ -67,7 +67,7 @@ export default function AnnotationCanvas({ annotations, currentTime, tool, color
     if (!drawing) return;
     setDrawing(false);
     if (points.length >= 1) {
-      onAdd({ tool, color, points });
+      onAdd({ tool, color, brush, points });
     }
     setPoints([]);
   };
@@ -90,7 +90,7 @@ function drawAnnotation(ctx, a, w, h, isLive = false) {
   ctx.save();
   ctx.strokeStyle = a.color || "#5A67D8";
   ctx.fillStyle = a.color || "#5A67D8";
-  ctx.lineWidth = 3;
+  ctx.lineWidth = a.brush || 3;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
 

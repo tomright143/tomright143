@@ -26,6 +26,10 @@ export default function CommentSidebar({ reviewId, currentTime, onSeek }) {
     setText(""); setReplyTo(null); refresh();
   };
 
+  const onKey = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
+  };
+
   const tree = useMemo(() => {
     const byParent = {};
     comments.forEach(c => {
@@ -65,7 +69,8 @@ export default function CommentSidebar({ reviewId, currentTime, onSeek }) {
           data-testid="comment-input"
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder={`@mention · drop note at ${formatTimecode(currentTime)}`}
+          onKeyDown={onKey}
+          placeholder={`@mention · Enter to send · ${formatTimecode(currentTime)}`}
           rows={2}
           className="bg-[#121214] border-[#232326] rounded-sm resize-none text-sm"
         />

@@ -17,7 +17,7 @@ export default function Login() {
           <div className="w-7 h-7 rounded-sm bg-[#5A67D8] flex items-center justify-center">
             <Film className="w-4 h-4 text-white" />
           </div>
-          <span className="font-mono text-sm tracking-widest uppercase">Zerostore</span>
+          <span className="font-mono text-sm tracking-widest uppercase">Review.io</span>
         </div>
         <div className="space-y-6 max-w-md rise">
           <p className="font-mono text-xs uppercase tracking-[0.2em] text-[#5C5C66]">Frame-Accurate · Zero-Storage · Collaborative</p>
@@ -43,7 +43,7 @@ export default function Login() {
             <div className="w-7 h-7 rounded-sm bg-[#5A67D8] flex items-center justify-center">
               <Film className="w-4 h-4 text-white" />
             </div>
-            <span className="font-mono text-sm tracking-widest uppercase">Zerostore</span>
+            <span className="font-mono text-sm tracking-widest uppercase">Review.io</span>
           </div>
           <div>
             <h2 className="text-3xl font-semibold tracking-tight">Sign in</h2>

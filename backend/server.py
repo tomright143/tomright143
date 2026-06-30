@@ -152,7 +152,11 @@ async def create_session(request: Request, response: Response):
 @api_router.get("/auth/me")
 async def me(request: Request):
     u = await get_current_user(request)
-    # add admin flag
+    # Backfill plan_until for any paid user missing it
+    if u.get("plan") and u["plan"] != "free" and not u.get("plan_until"):
+        until = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+        await db.users.update_one({"user_id": u["user_id"]}, {"$set": {"plan_until": until}})
+        u["plan_until"] = until
     admin_doc = await db.admins.find_one({"email": u["email"]}, {"_id": 0})
     u["is_admin"] = (u["email"] == DEFAULT_ADMIN) or bool(admin_doc)
     return u

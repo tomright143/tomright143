@@ -130,13 +130,53 @@ export default function Workspace() {
     doExportPdf();
   }, [user]); // eslint-disable-line
 
-  const doExportPdf = () => {
-    const win = window.open("", "_blank");
-    const annsHtml = annotations.map(a => `<div style="border-bottom:1px solid #232326;padding:8px 0"><b style="color:#5A67D8;font-family:monospace">${formatTimecode(a.timestamp)}</b> — ${a.tool} by ${a.owner_name}</div>`).join("");
-    const brand = user.brand_logo ? `<img src="${user.brand_logo}" style="height:36px"/>` : `<div style="font-family:monospace;letter-spacing:.2em;text-transform:uppercase;font-weight:600">REVIEW.IO</div>`;
-    win.document.write(`<!doctype html><html><head><title>${review.title} — Review.io</title><style>body{font-family:system-ui;background:#fff;color:#111;padding:32px;max-width:800px;margin:auto}h1{font-size:28px;margin:.2em 0}p{color:#555}.foot{margin-top:32px;font-family:monospace;font-size:10px;color:#888;border-top:1px solid #ddd;padding-top:12px}</style></head><body>${brand}<h1>${review.title}</h1><p>By ${user.email} · ${new Date().toLocaleString()}</p><p style="font-family:monospace;font-size:11px">Source: ${review.video_url}</p><h3>Annotations (${annotations.length})</h3>${annsHtml}<div class="foot">Review.io by Black Fxtudio · ${user.email}</div></body></html>`);
-    win.document.close();
-    setTimeout(() => win.print(), 400);
+  const doExportPdf = async () => {
+    const timed = comments.filter(c => c.timestamp != null).sort((a,b) => a.timestamp - b.timestamp);
+    const p = ytPlayerRef.current;
+    const canvas = document.querySelector("[data-testid='annotation-canvas']");
+    const frames = [];
+    const thumb = review.video_type === "youtube" ? `https://i.ytimg.com/vi/${review.video_id}/maxresdefault.jpg` : "";
+    toast.message(`Compiling Review List · ${timed.length} frames…`);
+    for (const c of timed) {
+      try {
+        if (p && p.seekTo) { p.seekTo(c.timestamp, true); p.pauseVideo(); }
+        await new Promise(r => setTimeout(r, 700));
+        const overlay = canvas ? canvas.toDataURL("image/png") : "";
+        frames.push({ comment: c, overlay });
+      } catch { frames.push({ comment: c, overlay: "" }); }
+    }
+    const brand = user.brand_logo ? `<img src="${user.brand_logo}" style="height:36px"/>` : `<div style="font-family:monospace;letter-spacing:.2em;text-transform:uppercase;font-weight:600;font-size:14px">REVIEW.IO</div>`;
+    const itemsHtml = frames.map(({comment, overlay}) => `
+      <div class="row">
+        <div class="frame"><img src="${thumb}" class="thumb"/>${overlay ? `<img src="${overlay}" class="overlay"/>` : ""}</div>
+        <div class="meta">
+          <div class="head"><img src="${comment.owner_picture||''}" class="avatar"/><div><div class="name">${comment.owner_name}</div><div class="tc">@ ${formatTimecode(comment.timestamp)}</div></div></div>
+          <p class="txt">${(comment.text||"").replace(/</g,"&lt;")}</p>
+        </div>
+      </div>`).join("");
+    const w = window.open("", "_blank");
+    w.document.write(`<!doctype html><html><head><title>Review List · ${review.title}</title><style>
+      @page { size:A4; margin:18mm }
+      body{font-family:system-ui;color:#111;max-width:780px;margin:auto;padding:24px}
+      h1{margin:8px 0;font-size:24px}p.sub{color:#777;font-size:12px;margin:0}
+      .row{display:flex;gap:14px;padding:14px 0;border-bottom:1px solid #e5e5e5;page-break-inside:avoid}
+      .frame{position:relative;width:280px;flex-shrink:0;background:#000;border-radius:6px;overflow:hidden;aspect-ratio:16/9}
+      .thumb,.overlay{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+      .overlay{object-fit:fill}
+      .meta{flex:1;min-width:0}
+      .head{display:flex;gap:8px;align-items:center}.avatar{width:32px;height:32px;border-radius:50%;background:#eee;object-fit:cover}
+      .name{font-weight:600;font-size:13px}.tc{font-family:monospace;font-size:11px;color:#5A67D8}
+      .txt{font-size:13px;margin:6px 0 0;line-height:1.5}
+      .foot{margin-top:36px;font-family:monospace;font-size:10px;color:#888;border-top:1px solid #ddd;padding-top:12px;text-align:center}
+    </style></head><body>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">${brand}<div style="text-align:right"><h1 style="margin:0">Review List</h1><p class="sub">${new Date().toLocaleString()}</p></div></div>
+      <h2 style="margin-top:14px;font-size:18px">${review.title}</h2>
+      <p class="sub">${timed.length} timestamped comments · exported by ${user.email}</p>
+      ${itemsHtml || "<p class='sub' style='margin-top:24px'>No timestamped comments to compile.</p>"}
+      <div class="foot">Review.io · by Black Fxtudio · ${user.email}</div>
+    </body></html>`);
+    w.document.close();
+    setTimeout(() => w.print(), 800);
   };
 
   const shareLink = () => {
@@ -163,9 +203,8 @@ export default function Workspace() {
             </div>
             <div className="flex items-center gap-2">
               <span className="font-mono text-xs text-[#5A67D8]" data-testid="current-timecode">{formatTimecode(currentTime)} / {formatTimecode(duration)}</span>
-              <Button data-testid="snap-frame-button" onClick={exportFrame} className="bg-[#121214] border border-[#232326] hover:bg-[#1a1a1d] rounded-sm h-9"><FileDown className="w-4 h-4 mr-2"/><span className="font-mono text-xs uppercase tracking-wider">Snap frame</span></Button>
               <Button data-testid="share-button" onClick={shareLink} className="bg-[#121214] border border-[#232326] hover:bg-[#1a1a1d] rounded-sm h-9"><Share2 className="w-4 h-4 mr-2"/><span className="font-mono text-xs uppercase tracking-wider">Share</span></Button>
-              <Button data-testid="export-pdf-button" onClick={handlePdfExport} className="bg-[#121214] border border-[#232326] hover:bg-[#1a1a1d] rounded-sm h-9"><FileDown className="w-4 h-4 mr-2"/><span className="font-mono text-xs uppercase tracking-wider">PDF</span></Button>
+              <Button data-testid="export-pdf-button" onClick={handlePdfExport} className="bg-[#5A67D8] hover:bg-[#4C51BF] text-white rounded-sm h-9"><FileDown className="w-4 h-4 mr-2"/><span className="font-mono text-xs uppercase tracking-wider">Export PDF</span></Button>
             </div>
           </div>
 

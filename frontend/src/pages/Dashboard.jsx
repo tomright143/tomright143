@@ -94,21 +94,27 @@ export default function Dashboard() {
           </Dialog>
         </div>
 
-        {/* Subscription countdown (paid only) */}
-        {user?.plan && user.plan !== "free" && daysLeft != null && (
+        {/* Subscription card — show whenever paid plan */}
+        {user?.plan && user.plan !== "free" && (
           <div className={`border rounded-sm p-4 mb-6 flex items-center justify-between gap-4 flex-wrap ${danger ? "border-[#EF4444] bg-[#1a0a0a]" : "border-[#232326] bg-[#121214]"}`} data-testid="subscription-card">
             <div className="flex items-center gap-3">
               {danger && <AlertTriangle className="w-5 h-5 text-[#EF4444]"/>}
               <div>
                 <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#8A8A93]">Plan · {user.plan}</p>
-                <p className={`text-lg font-semibold ${danger ? "text-[#EF4444]" : ""}`} data-testid="days-left">{daysLeft} day{daysLeft !== 1 ? "s" : ""} left {danger && "· EXPIRING SOON"}</p>
-                <div className="w-48 h-1 bg-[#232326] rounded-sm mt-1.5"><div className={`h-full rounded-sm ${danger ? "bg-[#EF4444]" : "bg-[#5A67D8]"}`} style={{ width: `${Math.min(100, (daysLeft / 30) * 100)}%` }}/></div>
+                {daysLeft != null ? (
+                  <>
+                    <p className={`text-lg font-semibold ${danger ? "text-[#EF4444]" : ""}`} data-testid="days-left">{daysLeft} day{daysLeft !== 1 ? "s" : ""} left {danger && "· EXPIRING SOON"}</p>
+                    <p className="font-mono text-[10px] text-[#5C5C66]">Expires on {planUntil.toLocaleDateString()}</p>
+                  </>
+                ) : (
+                  <p className="text-lg font-semibold">Active · expiry not set</p>
+                )}
+                {daysLeft != null && <div className="w-48 h-1 bg-[#232326] rounded-sm mt-1.5"><div className={`h-full rounded-sm ${danger ? "bg-[#EF4444]" : "bg-[#5A67D8]"}`} style={{ width: `${Math.min(100, (daysLeft / 30) * 100)}%` }}/></div>}
               </div>
             </div>
             <div className="flex gap-2">
               <Button onClick={() => navigate("/pricing")} data-testid="pay-advance" className={`${danger ? "bg-[#EF4444] hover:bg-[#dc2626]" : "bg-[#5A67D8] hover:bg-[#4C51BF]"} text-white rounded-sm h-9`}>Pay advance</Button>
-              {!user.cancel_at_end && <Button onClick={cancelPlan} data-testid="cancel-plan" className="bg-[#0A0A0B] border border-[#232326] hover:bg-[#1a1a1d] rounded-sm h-9 text-xs">Cancel plan</Button>}
-              {user.cancel_at_end && <span className="font-mono text-[10px] uppercase tracking-wider text-[#F59E0B] self-center">Cancelled · ends on expiry</span>}
+              {!user.cancel_at_end ? <Button onClick={cancelPlan} data-testid="cancel-plan" className="bg-[#0A0A0B] border border-[#232326] hover:bg-[#1a1a1d] text-white rounded-sm h-9 text-xs">Cancel plan</Button> : <span className="font-mono text-[10px] uppercase tracking-wider text-[#F59E0B] self-center">Cancelled · ends on expiry</span>}
             </div>
           </div>
         )}

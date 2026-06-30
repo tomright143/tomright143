@@ -30,8 +30,14 @@ export default function Workspace() {
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
   const [adOpen, setAdOpen] = useState(false);
+  const [comments, setComments] = useState([]);
   const ytPlayerRef = useRef(null);
   const iframeRef = useRef(null);
+  useEffect(() => {
+    if (review) api.get(`/comments/${id}`).then(r => setComments(r.data));
+  }, [id, review]);
+
+  const reload = () => api.get(`/comments/${id}`).then(r => setComments(r.data));
 
   useEffect(() => {
     (async () => {
@@ -155,17 +161,23 @@ export default function Workspace() {
             ) : (
               <iframe src={embed} title="player" className="absolute inset-0 w-full h-full" allow="autoplay; encrypted-media; fullscreen" allowFullScreen/>
             )}
-            {showWatermark && <Watermark email={user.email}/>}
+            {showWatermark && false && <Watermark email={user.email}/>}
             <AnnotationCanvas annotations={annotations} currentTime={currentTime} tool={tool} color={color} brush={brush} onAdd={addAnnotation} enabled={tool !== "select" && review.video_type === "youtube"}/>
           </div>
 
-          {/* Scrubber */}
-          <div className="mt-3" data-testid="scrubber-container">
+          {/* Scrubber with comment pins */}
+          <div className="mt-3 relative" data-testid="scrubber-container">
             <input type="range" min={0} max={duration || 100} step={0.05} value={currentTime}
               onChange={(e) => seekTo(parseFloat(e.target.value))}
               data-testid="video-scrubber"
               className="w-full h-2 appearance-none bg-[#121214] rounded-sm cursor-pointer accent-[#5A67D8]"
               style={{ background: `linear-gradient(to right, #5A67D8 0%, #5A67D8 ${progress}%, #232326 ${progress}%, #232326 100%)` }}/>
+            {duration > 0 && comments.filter(c => c.timestamp != null).map(c => (
+              <button key={c.id} title={`${c.owner_name}: ${c.text.slice(0,40)}`} onClick={() => seekTo(c.timestamp)}
+                data-testid={`scrubber-pin-${c.id}`}
+                className="absolute -top-1.5 w-3 h-3 rounded-full bg-[#F59E0B] border-2 border-[#0A0A0B] hover:scale-125 transition"
+                style={{ left: `calc(${(c.timestamp / duration) * 100}% - 6px)` }}/>
+            ))}
           </div>
 
           <div className="flex items-center justify-between mt-3 gap-2 flex-wrap">
@@ -180,15 +192,17 @@ export default function Workspace() {
             </div>
           </div>
 
-          <div className="lg:hidden mt-4 flex gap-2">
-            <Sheet>
-              <SheetTrigger asChild><Button data-testid="mobile-comments-trigger" className="flex-1 bg-[#121214] border border-[#232326] rounded-sm h-11"><MessageCircle className="w-4 h-4 mr-2"/><span className="font-mono text-xs uppercase tracking-wider">Comments</span></Button></SheetTrigger>
-              <SheetContent side="bottom" className="bg-[#0A0A0B] border-t border-[#232326] h-[75vh] p-0"><CommentSidebar reviewId={id} currentTime={currentTime} onSeek={seekTo}/></SheetContent>
-            </Sheet>
-            <Sheet>
-              <SheetTrigger asChild><Button data-testid="mobile-p2p-trigger" className="bg-[#10B981] text-black hover:bg-[#0a8763] rounded-sm h-11 px-4"><Users className="w-4 h-4"/></Button></SheetTrigger>
-              <SheetContent side="bottom" className="bg-[#0A0A0B] border-t border-[#232326] h-[75vh] p-0 overflow-y-auto"><P2PCallPanel reviewId={id} currentUser={user}/></SheetContent>
-            </Sheet>
+          {/* Mobile inline comments (Instagram-style always visible) */}
+          <div className="lg:hidden mt-6" data-testid="mobile-comments-inline">
+            <div className="border border-[#232326] rounded-sm bg-[#0A0A0B] h-[60vh] overflow-hidden">
+              <CommentSidebar reviewId={id} currentTime={currentTime} onSeek={seekTo}/>
+            </div>
+            <div className="mt-3 flex justify-center">
+              <Sheet>
+                <SheetTrigger asChild><Button data-testid="mobile-p2p-trigger" className="bg-[#10B981] text-black hover:bg-[#0a8763] rounded-sm h-11 px-4"><Users className="w-4 h-4 mr-2"/><span className="font-mono text-xs uppercase tracking-wider">P2P Call</span></Button></SheetTrigger>
+                <SheetContent side="bottom" className="bg-[#0A0A0B] border-t border-[#232326] h-[75vh] p-0 overflow-y-auto"><P2PCallPanel reviewId={id} currentUser={user}/></SheetContent>
+              </Sheet>
+            </div>
           </div>
         </div>
 

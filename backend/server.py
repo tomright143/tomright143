@@ -210,6 +210,62 @@ async def del_review(review_id: str, request: Request):
     await db.comments.delete_many({"review_id": review_id})
     return {"ok": True}
 
+@api_router.patch("/reviews/{review_id}")
+async def update_review(review_id: str, request: Request):
+    user = await get_current_user(request)
+    body = await request.json()
+    updates = {k: v for k, v in body.items() if k in ("title", "allow_download", "video_url")}
+    if "video_url" in updates:
+        info = extract_video_info(updates["video_url"])
+        if info["video_type"] == "unknown":
+            raise HTTPException(400, "Unsupported URL")
+        updates["video_type"] = info["video_type"]
+        updates["video_id"] = info["video_id"]
+    await db.reviews.update_one({"id": review_id, "owner_id": user["user_id"]}, {"$set": updates})
+    r = await db.reviews.find_one({"id": review_id}, {"_id": 0})
+    return r
+
+@api_router.post("/billing/cancel")
+async def cancel_plan(request: Request):
+    user = await get_current_user(request)
+    await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"cancel_at_end": True}})
+    # Add notification
+    await db.notifications.insert_one({
+        "id": f"ntf_{uuid.uuid4().hex[:10]}", "user_id": user["user_id"],
+        "kind": "billing", "title": "Plan cancelled",
+        "body": f"Your {user['plan']} plan will remain active until expiry, then revert to free.",
+        "read": False, "created_at": now_iso(),
+    })
+    return {"ok": True}
+
+@api_router.get("/notifications")
+async def list_notifications(request: Request):
+    user = await get_current_user(request)
+    # Auto-add expiry notification if plan expiring within 7d
+    if user.get("plan_until") and user["plan"] != "free":
+        try:
+            until = datetime.fromisoformat(user["plan_until"]).replace(tzinfo=timezone.utc) if "T" in user["plan_until"] else datetime.fromisoformat(user["plan_until"])
+            days_left = (until - datetime.now(timezone.utc)).days
+            if 0 <= days_left <= 7:
+                existing = await db.notifications.find_one({"user_id": user["user_id"], "kind": "expiry-soon"})
+                if not existing:
+                    await db.notifications.insert_one({
+                        "id": f"ntf_{uuid.uuid4().hex[:10]}", "user_id": user["user_id"],
+                        "kind": "expiry-soon", "title": "Expiring soon",
+                        "body": f"Your {user['plan']} plan expires in {days_left} days. Pay advance to keep it active.",
+                        "read": False, "created_at": now_iso(),
+                    })
+        except Exception:
+            pass
+    rows = await db.notifications.find({"user_id": user["user_id"]}, {"_id": 0}).sort("created_at", -1).to_list(50)
+    return rows
+
+@api_router.post("/notifications/read")
+async def mark_read(request: Request):
+    user = await get_current_user(request)
+    await db.notifications.update_many({"user_id": user["user_id"]}, {"$set": {"read": True}})
+    return {"ok": True}
+
 @api_router.post("/reviews/{review_id}/star")
 async def star_review(review_id: str, request: Request):
     await get_current_user(request)
@@ -221,24 +277,42 @@ async def star_review(review_id: str, request: Request):
 async def get_shared(token: str, request: Request):
     r = await db.reviews.find_one({"share_token": token}, {"_id": 0})
     if not r: raise HTTPException(404, "Not found")
-    # Increment view (no auth needed for view tracking)
+    # REQUIRE authentication for shared access
+    u = await get_current_user(request)
+    viewer_email = u["email"]
+    # Add to allowed viewers if first time
+    is_owner = (u["user_id"] == r["owner_id"])
+    if not is_owner:
+        existing_viewer = await db.review_viewers.find_one({"review_id": r["id"], "user_id": u["user_id"]})
+        if not existing_viewer:
+            await db.review_viewers.insert_one({
+                "review_id": r["id"], "user_id": u["user_id"],
+                "name": u["name"], "email": u["email"], "joined_at": now_iso(),
+            })
+            # Notify owner
+            await db.notifications.insert_one({
+                "id": f"ntf_{uuid.uuid4().hex[:10]}", "user_id": r["owner_id"],
+                "kind": "join", "title": f"{u['name']} joined the review",
+                "body": f"{u['email']} opened your shared link.", "review_id": r["id"],
+                "read": False, "created_at": now_iso(),
+            })
     new_count = (r.get("view_count") or 0) + 1
     await db.reviews.update_one({"id": r["id"]}, {"$set": {"view_count": new_count}})
-    # User auth optional
-    try:
-        u = await get_current_user(request)
-        viewer_email = u["email"]
-        # track per-viewer view count for ad-after-3 logic
-        await db.share_views.update_one(
-            {"review_id": r["id"], "viewer": viewer_email},
-            {"$inc": {"count": 1}, "$set": {"last": now_iso()}},
-            upsert=True,
-        )
-        v = await db.share_views.find_one({"review_id": r["id"], "viewer": viewer_email}, {"_id": 0})
-        viewer_count = v["count"] if v else 1
-    except Exception:
-        viewer_count = 1
+    await db.share_views.update_one(
+        {"review_id": r["id"], "viewer": viewer_email},
+        {"$inc": {"count": 1}, "$set": {"last": now_iso()}}, upsert=True,
+    )
+    v = await db.share_views.find_one({"review_id": r["id"], "viewer": viewer_email}, {"_id": 0})
+    viewer_count = v["count"] if v else 1
     return {"review": r, "viewer_count": viewer_count, "show_ad": viewer_count >= 3 and (viewer_count - 3) % 3 == 0}
+
+@api_router.get("/reviews/{review_id}/viewers")
+async def list_viewers(review_id: str, request: Request):
+    user = await get_current_user(request)
+    r = await db.reviews.find_one({"id": review_id}, {"_id": 0})
+    if not r or r["owner_id"] != user["user_id"]:
+        raise HTTPException(403, "Owner only")
+    return await db.review_viewers.find({"review_id": review_id}, {"_id": 0}).to_list(200)
 
 # ===== Annotations =====
 @api_router.post("/annotations")
@@ -281,6 +355,14 @@ async def create_comment(payload: CommentCreate, request: Request):
     }
     await db.comments.insert_one(doc)
     doc.pop("_id", None)
+    r = await db.reviews.find_one({"id": payload.review_id}, {"_id": 0})
+    if r and r["owner_id"] != user["user_id"]:
+        await db.notifications.insert_one({
+            "id": f"ntf_{uuid.uuid4().hex[:10]}", "user_id": r["owner_id"],
+            "kind": "comment", "title": f"{user['name']} commented",
+            "body": payload.text[:80], "review_id": payload.review_id,
+            "read": False, "created_at": now_iso(),
+        })
     return doc
 
 @api_router.get("/comments/{review_id}")

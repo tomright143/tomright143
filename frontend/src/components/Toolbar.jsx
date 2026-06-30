@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { MousePointer2, ArrowUpRight, Circle, Minus, PenLine, Check, X, ThumbsUp, Flame, ThumbsDown, Trash2, Brush } from "lucide-react";
+import { MousePointer2, ArrowUpRight, Circle, Minus, PenLine, Check, X, ThumbsUp, Flame, ThumbsDown, Trash2, Brush, Eraser } from "lucide-react";
 
 const TOOLS = [
   { id: "select", icon: MousePointer2, label: "Select" },

@@ -5,6 +5,7 @@ import { Film, LogOut, User as UserIcon, CreditCard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import NotificationBell from "@/components/NotificationBell";
 
 export default function TopNav() {
   const { user, logout } = useAuth();
@@ -40,6 +41,7 @@ export default function TopNav() {
           <span className="hidden sm:inline-flex items-center px-2 py-1 border border-[#232326] rounded-sm font-mono text-[10px] uppercase tracking-wider text-[#8A8A93]" data-testid="plan-badge">
             {user?.plan || "free"}
           </span>
+          <NotificationBell/>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button data-testid="profile-menu-trigger" className="rounded-full focus:outline-none focus:ring-2 focus:ring-[#5A67D8]">

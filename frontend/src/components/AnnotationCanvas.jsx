@@ -48,6 +48,12 @@ export default function AnnotationCanvas({ annotations, currentTime, tool, color
   const onDown = (e) => {
     if (!enabled) return;
     e.preventDefault();
+    if (tool === "eraser") {
+      const p = getPoint(e);
+      // mark visible annotations within radius as erased by adding "erase" annotation
+      onAdd({ tool: "erase", color: "#000", brush, points: [p] });
+      return;
+    }
     if (["like", "impressed", "dislike", "tick", "cross"].includes(tool)) {
       const p = getPoint(e);
       onAdd({ tool, color, brush, points: [p] });

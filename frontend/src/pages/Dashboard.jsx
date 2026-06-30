@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Plus, Play, Trash2, Clock, Star, Share2, Users, Folder, TrendingUp, Award } from "lucide-react";
+import { Plus, Play, Trash2, Clock, Star, Share2, Users, Folder, TrendingUp, Award, Edit, AlertTriangle, X as XIcon } from "lucide-react";
 import { toast } from "sonner";
 import { parseVideoUrl } from "@/lib/videoUtils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -20,7 +20,7 @@ export default function Dashboard() {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [url, setUrl] = useState("");
-  const [allowDownload, setAllowDownload] = useState(false);
+  const [allowDownload, setAllowDownload] = useState(true);
   const navigate = useNavigate();
   const { user } = useAuth();
 
@@ -42,6 +42,25 @@ export default function Dashboard() {
       setOpen(false); setTitle(""); setUrl(""); setAllowDownload(false);
       navigate(`/workspace/${r.data.id}`);
     } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
+  };
+
+  const [editing, setEditing] = useState(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editAllow, setEditAllow] = useState(true);
+
+  const openEdit = (e, r) => { e.stopPropagation(); setEditing(r); setEditTitle(r.title); setEditAllow(r.allow_download); };
+  const saveEdit = async () => {
+    await api.patch(`/reviews/${editing.id}`, { title: editTitle, allow_download: editAllow });
+    setEditing(null); fetchAll(); toast.success("Project updated");
+  };
+
+  const planUntil = user?.plan_until ? new Date(user.plan_until) : null;
+  const daysLeft = planUntil ? Math.max(0, Math.ceil((planUntil - new Date()) / (1000*60*60*24))) : null;
+  const danger = daysLeft != null && daysLeft <= 7;
+
+  const cancelPlan = async () => {
+    if (!window.confirm("Cancel plan? It stays active until expiry, then reverts to free.")) return;
+    await api.post("/billing/cancel"); toast.success("Cancelled — active till expiry"); fetchAll();
   };
 
   const del = async (e, id) => { e.stopPropagation(); if (!window.confirm("Delete this review?")) return; await api.delete(`/reviews/${id}`); fetchAll(); };
@@ -72,6 +91,25 @@ export default function Dashboard() {
             </DialogContent>
           </Dialog>
         </div>
+
+        {/* Subscription countdown (paid only) */}
+        {user?.plan && user.plan !== "free" && daysLeft != null && (
+          <div className={`border rounded-sm p-4 mb-6 flex items-center justify-between gap-4 flex-wrap ${danger ? "border-[#EF4444] bg-[#1a0a0a]" : "border-[#232326] bg-[#121214]"}`} data-testid="subscription-card">
+            <div className="flex items-center gap-3">
+              {danger && <AlertTriangle className="w-5 h-5 text-[#EF4444]"/>}
+              <div>
+                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#8A8A93]">Plan · {user.plan}</p>
+                <p className={`text-lg font-semibold ${danger ? "text-[#EF4444]" : ""}`} data-testid="days-left">{daysLeft} day{daysLeft !== 1 ? "s" : ""} left {danger && "· EXPIRING SOON"}</p>
+                <div className="w-48 h-1 bg-[#232326] rounded-sm mt-1.5"><div className={`h-full rounded-sm ${danger ? "bg-[#EF4444]" : "bg-[#5A67D8]"}`} style={{ width: `${Math.min(100, (daysLeft / 30) * 100)}%` }}/></div>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={() => navigate("/pricing")} data-testid="pay-advance" className={`${danger ? "bg-[#EF4444] hover:bg-[#dc2626]" : "bg-[#5A67D8] hover:bg-[#4C51BF]"} text-white rounded-sm h-9`}>Pay advance</Button>
+              {!user.cancel_at_end && <Button onClick={cancelPlan} data-testid="cancel-plan" className="bg-[#0A0A0B] border border-[#232326] hover:bg-[#1a1a1d] rounded-sm h-9 text-xs">Cancel plan</Button>}
+              {user.cancel_at_end && <span className="font-mono text-[10px] uppercase tracking-wider text-[#F59E0B] self-center">Cancelled · ends on expiry</span>}
+            </div>
+          </div>
+        )}
 
         {/* Stats Grid */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-10" data-testid="stats-grid">
@@ -130,6 +168,19 @@ export default function Dashboard() {
             </div>
           )}
       </main>
+      {editing && (
+        <Dialog open={!!editing} onOpenChange={() => setEditing(null)}>
+          <DialogContent className="bg-[#121214] border-[#232326] text-[#EDEDF0]">
+            <DialogHeader><DialogTitle className="font-mono uppercase tracking-wider text-sm">Edit project</DialogTitle></DialogHeader>
+            <div className="space-y-4 py-2">
+              <div><Label className="font-mono text-[10px] uppercase tracking-[0.15em] text-[#8A8A93]">Title</Label><Input data-testid="edit-title-input" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} className="bg-[#0A0A0B] border-[#232326] rounded-sm mt-1"/></div>
+              <div className="flex items-center justify-between pt-2 border-t border-[#232326]"><Label className="font-mono text-[10px] uppercase tracking-[0.15em] text-[#8A8A93]">Allow clean download</Label><Switch data-testid="edit-allow-download" checked={editAllow} onCheckedChange={setEditAllow}/></div>
+              <p className="text-[10px] font-mono text-[#5C5C66]">When ON, downloaded video is clean (no watermark). When OFF, download is disabled.</p>
+            </div>
+            <DialogFooter><Button onClick={saveEdit} data-testid="save-edit" className="bg-[#5A67D8] hover:bg-[#4C51BF] rounded-sm">Save</Button></DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
       <Footer/>
     </div>
   );

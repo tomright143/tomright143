@@ -22,7 +22,7 @@ export default function Dashboard() {
   const [url, setUrl] = useState("");
   const [allowDownload, setAllowDownload] = useState(true);
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, refresh } = useAuth();
 
   const [payments, setPayments] = useState([]);
 
@@ -61,8 +61,14 @@ export default function Dashboard() {
   const danger = daysLeft != null && daysLeft <= 7;
 
   const cancelPlan = async () => {
-    if (!window.confirm("Cancel plan? It stays active until expiry, then reverts to free.")) return;
-    await api.post("/billing/cancel"); toast.success("Cancelled — active till expiry"); fetchAll();
+    const ok = window.confirm(`Cancel your ${user.plan} plan?\n\nIt will remain active until expiry, then revert to Free (3-project cap). You can resubscribe anytime.`);
+    if (!ok) return;
+    try {
+      await api.post("/billing/cancel");
+      toast.success("Plan cancelled — active till expiry date");
+      await refresh();
+      fetchAll();
+    } catch (e) { toast.error("Could not cancel — try again"); }
   };
 
   const del = async (e, id) => { e.stopPropagation(); if (!window.confirm("Delete this review?")) return; await api.delete(`/reviews/${id}`); fetchAll(); };
@@ -86,7 +92,7 @@ export default function Dashboard() {
               <DialogHeader><DialogTitle className="font-mono uppercase tracking-wider text-sm">Create review</DialogTitle></DialogHeader>
               <div className="space-y-4 py-2">
                 <div className="space-y-1.5"><Label className="font-mono text-[10px] uppercase tracking-[0.15em] text-[#8A8A93]">Title</Label><Input data-testid="new-review-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Q4 brand cut v3" className="bg-[#0A0A0B] border-[#232326] rounded-sm"/></div>
-                <div className="space-y-1.5"><Label className="font-mono text-[10px] uppercase tracking-[0.15em] text-[#8A8A93]">Stream URL</Label><Input data-testid="new-review-url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://youtube.com/watch?v=..." className="bg-[#0A0A0B] border-[#232326] rounded-sm font-mono text-xs"/></div>
+                <div className="space-y-1.5"><Label className="font-mono text-[10px] uppercase tracking-[0.15em] text-[#8A8A93]">Stream URL</Label><Input data-testid="new-review-url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://youtube.com/watch?v=..." className="bg-[#0A0A0B] border-[#232326] rounded-sm font-mono text-xs"/><p className="text-[10px] font-mono text-[#5C5C66] mt-1">Google Drive: set sharing to "Anyone with link" first. Paste the full /file/d/&lt;ID&gt;/view URL.</p></div>
                 <div className="flex items-center justify-between pt-2 border-t border-[#232326]"><div><Label className="font-mono text-[10px] uppercase tracking-[0.15em] text-[#8A8A93]">Allow download</Label></div><Switch checked={allowDownload} onCheckedChange={setAllowDownload}/></div>
               </div>
               <DialogFooter><Button onClick={create} data-testid="create-review-submit" className="bg-[#5A67D8] hover:bg-[#4C51BF] rounded-sm">Create</Button></DialogFooter>

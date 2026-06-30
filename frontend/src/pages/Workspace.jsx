@@ -131,7 +131,9 @@ export default function Workspace() {
   }, [user]); // eslint-disable-line
 
   const doExportPdf = async () => {
+    if (!review) { toast.error("Review not loaded"); return; }
     const timed = comments.filter(c => c.timestamp != null).sort((a,b) => a.timestamp - b.timestamp);
+    if (timed.length === 0) { toast.error("No timestamped comments to compile"); return; }
     const p = ytPlayerRef.current;
     const canvas = document.querySelector("[data-testid='annotation-canvas']");
     const frames = [];

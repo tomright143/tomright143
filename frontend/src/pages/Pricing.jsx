@@ -53,15 +53,17 @@ export default function Pricing() {
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
           {PLANS.map(p => {
             const base = (p.price / 1.18).toFixed(2); const gstAmt = (p.price - base).toFixed(2);
+            const isCurrent = user?.plan === p.id;
             return (
-              <div key={p.id} data-testid={`plan-${p.id}`} className={`relative border rounded-sm p-5 bg-[#121214] ${p.featured ? "border-[#5A67D8]" : "border-[#232326]"}`}>
-                {p.featured && <span className="absolute -top-2.5 right-4 bg-[#5A67D8] text-white text-[9px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-sm">Popular</span>}
+              <div key={p.id} data-testid={`plan-${p.id}`} className={`relative border-2 rounded-sm p-5 transition ${isCurrent ? "border-[#10B981] bg-[#0c1a14] ring-2 ring-[#10B981]/30" : p.featured ? "border-[#5A67D8] bg-[#121214]" : "border-[#232326] bg-[#121214]"}`}>
+                {isCurrent && <span className="absolute -top-2.5 left-4 bg-[#10B981] text-black text-[9px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-sm">Current plan</span>}
+                {!isCurrent && p.featured && <span className="absolute -top-2.5 right-4 bg-[#5A67D8] text-white text-[9px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-sm">Popular</span>}
                 <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#8A8A93]">{p.name}</p>
                 <div className="mt-3 flex items-baseline gap-1"><span className="text-3xl font-semibold">₹{p.price}</span><span className="text-xs text-[#5C5C66] font-mono">/mo</span></div>
                 {p.price > 0 && <p className="font-mono text-[9px] text-[#5C5C66] mt-0.5">Base ₹{base} + GST ₹{gstAmt}</p>}
                 <ul className="mt-5 space-y-2">{p.perks.map((perk, i) => <li key={i} className="flex items-start gap-2 text-xs"><Check className="w-3.5 h-3.5 text-[#5A67D8] shrink-0 mt-0.5"/>{perk}</li>)}</ul>
-                <Button data-testid={`subscribe-${p.id}`} onClick={() => request(p.id)} disabled={user?.plan === p.id || p.id === "free"} className={`w-full mt-5 rounded-sm h-9 text-xs ${p.featured ? "bg-[#5A67D8] hover:bg-[#4C51BF]" : "bg-[#0A0A0B] border border-[#5A67D8] text-[#5A67D8] hover:bg-[#5A67D8] hover:text-white"}`}>
-                  {user?.plan === p.id ? "Current" : p.id === "free" ? "Free forever" : "Pay via UPI"}
+                <Button data-testid={`subscribe-${p.id}`} onClick={() => request(p.id)} disabled={p.id === "free"} className={`w-full mt-5 rounded-sm h-9 text-xs ${isCurrent ? "bg-[#10B981] text-black hover:bg-[#0a8763]" : p.featured ? "bg-[#5A67D8] hover:bg-[#4C51BF]" : "bg-[#0A0A0B] border border-[#5A67D8] text-[#5A67D8] hover:bg-[#5A67D8] hover:text-white"}`}>
+                  {p.id === "free" ? "Free forever" : isCurrent ? "Extend / pay advance" : "Pay via UPI"}
                 </Button>
               </div>
             );

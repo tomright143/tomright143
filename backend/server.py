@@ -77,9 +77,9 @@ async def get_current_user(request: Request):
         exp = exp.replace(tzinfo=timezone.utc)
     if exp < datetime.now(timezone.utc):
         raise HTTPException(401, "Session expired")
-    # rolling: extend if more than 1 day used
-    if (exp - datetime.now(timezone.utc)) < timedelta(days=6):
-        new_exp = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
+    # rolling: extend if used within last 5 days of expiry
+    if (exp - datetime.now(timezone.utc)) < timedelta(days=25):
+        new_exp = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
         await db.user_sessions.update_one({"session_token": token}, {"$set": {"expires_at": new_exp}})
     udoc = await db.users.find_one({"user_id": sess["user_id"]}, {"_id": 0})
     if not udoc:
@@ -139,12 +139,12 @@ async def create_session(request: Request, response: Response):
         if ref:
             await db.users.update_one({"user_id": ref}, {"$inc": {"referrals_count": 1}})
     session_token = data["session_token"]
-    expires_at = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
+    expires_at = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
     await db.user_sessions.insert_one({
         "user_id": user_id, "session_token": session_token,
         "expires_at": expires_at, "created_at": now_iso(),
     })
-    response.set_cookie("session_token", session_token, max_age=7*24*60*60,
+    response.set_cookie("session_token", session_token, max_age=30*24*60*60,
                         httponly=True, secure=True, samesite="none", path="/")
     udoc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
     return {"user": udoc}

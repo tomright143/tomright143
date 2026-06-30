@@ -24,10 +24,12 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
 
+  const [payments, setPayments] = useState([]);
+
   const fetchAll = async () => {
     try {
-      const [r, s] = await Promise.all([api.get("/reviews"), api.get("/me/stats")]);
-      setReviews(r.data); setStats(s.data);
+      const [r, s, pm] = await Promise.all([api.get("/reviews"), api.get("/me/stats"), api.get("/billing/payments")]);
+      setReviews(r.data); setStats(s.data); setPayments(pm.data);
     } catch { toast.error("Could not load"); }
     finally { setLoading(false); }
   };
@@ -168,6 +170,25 @@ export default function Dashboard() {
             </div>
           )}
       </main>
+      {/* Subscription history */}
+      {payments.length > 0 && (
+        <section className="max-w-[1400px] mx-auto px-4 sm:px-8 pb-12" data-testid="subscription-history">
+          <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#5C5C66] mb-3">Subscription history</p>
+          <div className="border border-[#232326] rounded-sm bg-[#121214] overflow-hidden">
+            <table className="w-full text-sm"><thead><tr className="border-b border-[#232326] text-left"><th className="p-3 font-mono text-[10px] uppercase">Date</th><th className="p-3 font-mono text-[10px] uppercase">Plan</th><th className="p-3 font-mono text-[10px] uppercase">Amount</th><th className="p-3 font-mono text-[10px] uppercase">Txn</th><th className="p-3 font-mono text-[10px] uppercase">Status</th></tr></thead><tbody>
+              {payments.map(p => (
+                <tr key={p.id} className="border-b border-[#232326]" data-testid={`payment-row-${p.id}`}>
+                  <td className="p-3 font-mono text-xs">{new Date(p.created_at).toLocaleDateString()}</td>
+                  <td className="p-3 uppercase font-mono text-xs">{p.plan}</td>
+                  <td className="p-3 font-mono">₹{p.amount} <span className="text-[#5C5C66] text-[10px]">(₹{p.base}+GST ₹{p.gst})</span></td>
+                  <td className="p-3 font-mono text-xs text-[#8A8A93]">{p.txn_ref || "—"}</td>
+                  <td className="p-3"><span className={`font-mono text-[10px] uppercase px-2 py-0.5 rounded-sm border ${p.status === "approved" ? "border-[#10B981] text-[#10B981]" : "border-[#F59E0B] text-[#F59E0B]"}`}>{p.status}</span></td>
+                </tr>
+              ))}
+            </tbody></table>
+          </div>
+        </section>
+      )}
       {editing && (
         <Dialog open={!!editing} onOpenChange={() => setEditing(null)}>
           <DialogContent className="bg-[#121214] border-[#232326] text-[#EDEDF0]">

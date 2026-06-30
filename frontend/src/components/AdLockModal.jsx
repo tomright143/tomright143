@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Pause, AlertTriangle } from "lucide-react";
+import AdSenseUnit from "@/components/AdSenseUnit";
 
 // Full-screen rewarded ad with Page Visibility / focus lock.
 // Pauses countdown when tab/window loses focus or hidden.
@@ -43,8 +44,8 @@ export default function AdLockModal({ open, onComplete, onClose, durationSec = 1
     <div className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-2xl flex items-center justify-center px-6" data-testid="ad-lock-modal">
       <div className="max-w-lg w-full glass rounded-sm p-8 text-center space-y-6 rise">
         <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#5A67D8]" data-testid="ad-label">Rewarded ad · free tier</p>
-        <div className="aspect-video bg-gradient-to-br from-[#5A67D8] via-[#4C51BF] to-[#121214] rounded-sm flex items-center justify-center">
-          <span className="font-mono text-sm uppercase tracking-[0.2em] text-white/80">Sponsored placement</span>
+        <div className="bg-white rounded-sm overflow-hidden min-h-[280px]" data-testid="ad-slot">
+          <AdSenseUnit/>
         </div>
         {paused ? (
           <div className="flex items-start gap-3 text-left bg-[#1a1a1d] border border-[#3A3A40] rounded-sm p-4" data-testid="ad-paused-banner">

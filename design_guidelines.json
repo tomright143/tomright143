@@ -1,0 +1,113 @@
+{
+  "theme": "Dark",
+  "archetype": "Swiss & High-Contrast (Emergent.sh style)",
+  "rationale": "The application requires a professional, structural 'infrastructure-over-aesthetic' vibe similar to emergent.sh. We prioritize clarity, minimal friction, crisp typography, and a sharp dark neutral palette with subtle violet/blue accents to highlight actions without overwhelming the video content.",
+  "colors": {
+    "background": "#0A0A0B",
+    "surface": "#121214",
+    "surface_glass": "rgba(18, 18, 20, 0.6)",
+    "border": "#232326",
+    "border_hover": "#3A3A40",
+    "primary": "#5A67D8",
+    "primary_hover": "#4C51BF",
+    "primary_foreground": "#FFFFFF",
+    "accent": "#8B5CF6",
+    "text_primary": "#EDEDF0",
+    "text_secondary": "#8A8A93",
+    "text_muted": "#5C5C66",
+    "success": "#10B981",
+    "danger": "#EF4444",
+    "watermark": "rgba(255, 255, 255, 0.35)",
+    "css_variables_instructions": "Implement these as CSS variables in global styles (e.g. :root { --background: 10 10 11; --primary: 90 103 216; } using HSL or RGB) to seamlessly integrate with Tailwind and Shadcn."
+  },
+  "typography": {
+    "fonts": {
+      "heading": "Geist, sans-serif",
+      "body": "Geist, sans-serif",
+      "mono": "'JetBrains Mono', monospace"
+    },
+    "imports": [
+      "@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap');",
+      "/* Assume Geist is either imported via next/font or standard CDN; fallback to Inter if purely unavailable, but try Geist first. */"
+    ],
+    "hierarchy": {
+      "h1": "text-4xl sm:text-5xl font-semibold tracking-tight text-text_primary",
+      "h2": "text-2xl sm:text-3xl font-medium tracking-tight text-text_primary",
+      "h3": "text-lg sm:text-xl font-medium text-text_primary",
+      "body": "text-base leading-relaxed text-text_secondary",
+      "small_labels": "text-xs font-mono uppercase tracking-[0.15em] text-text_muted",
+      "timecodes": "text-sm font-mono text-primary"
+    }
+  },
+  "spacing_and_layout": {
+    "philosophy": "High white space (negative space), clean grid alignment, clear visual hierarchy. Avoid centered Bootstrap-style cards; use sharp, asymmetrical layouts.",
+    "dashboard": "Use a Bento-grid style for 'My Active Reviews' with sharp corners (rounded-md or rounded-none) and subtle 1px borders.",
+    "workspace_desktop": "Two-panel structural layout. Left: 16:9 Video Player (max-height 80vh) + floating bottom dock for tools. Right: 300-350px fixed width sidebar for Threaded Comments and P2P Avatars.",
+    "workspace_mobile": "Video pinned to top. Drawing toolbar as a horizontal scrolling dock or FAB at the bottom. Comments inside a swipeable bottom-sheet drawer (Instagram style).",
+    "borders_and_radius": "Keep border radii minimal. Use `rounded-md` (6px) or `rounded-sm` (4px). Avoid overly pill-shaped buttons unless it's the floating FAB."
+  },
+  "components": {
+    "buttons": "Flat, sharp edges, 1px border. Primary CTA uses #5A67D8. Avoid excessive drop shadows; rely on color contrast and 1px inner glows if needed.",
+    "video_player": "Must maintain strict 16:9 aspect ratio. The HTML5 Canvas overlay MUST be absolute positioned, top-0 left-0, w-full h-full, pointer-events-auto when drawing, transparent background.",
+    "toolbar": "Glassmorphism (`backdrop-blur-xl bg-surface_glass border border-border`). Contains vector tools (arrow, circle, dashed line, freehand, stamps) and color picker.",
+    "comments": "Threaded Instagram-style. Avatars (rounded-full), User Handle (font-medium), Timestamp/Video Timecode (font-mono text-primary), nested replies indented with a subtle left border.",
+    "p2p_panel": "Row of avatars in the sidebar. Online status indicated by a crisp 2px solid ring around the avatar (Success: #10B981, Offline: #5C5C66).",
+    "ad_modal": "Focus-Lock rewarded ad full-screen modal. Must blur the background (`backdrop-blur-2xl`) and center a sharp countdown timer in JetBrains Mono.",
+    "shadcn_overrides": "Do NOT use default Shadcn heavy rounding. Override `--radius` to `0.3rem` or `0rem` in Tailwind config. Use pure black/dark grey for dialog overlays."
+  },
+  "motion_and_interactions": {
+    "general": "Minimalist. 'Infrastructure over aesthetic'. Avoid bouncy springs. Use snappy ease-out transitions (150-200ms).",
+    "watermark": "Dynamic floating watermark must drift slowly across the video player using CSS translate/keyframes, 30-40% opacity, pointer-events-none.",
+    "hover_states": "Background slightly lightens (e.g., from surface to border color). Explicitly change text colors on hover to ensure contrast.",
+    "drawer_mobile": "Use standard bottom sheet drag physics (if using Framer Motion, use a firm spring: stiffness 300, damping 30)."
+  },
+  "icons": {
+    "library": "lucide-react",
+    "style": "Crisp, 1.5px stroke width. Consistent sizing (usually w-4 h-4 or w-5 h-5)."
+  },
+  "media": {
+    "avatars": [
+      {
+        "url": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzh8MHwxfHNlYXJjaHwxfHxwcm9mZXNzaW9uYWwlMjBoZWFkc2hvdCUyMHBvcnRyYWl0fGVufDB8fHx8MTc4MjgyMTM4MXww&ixlib=rb-4.1.0&q=85",
+        "description": "User Avatar 1"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzh8MHwxfHNlYXJjaHwzfHxwcm9mZXNzaW9uYWwlMjBoZWFkc2hvdCUyMHBvcnRyYWl0fGVufDB8fHx8MTc4MjgyMTM4MXww&ixlib=rb-4.1.0&q=85",
+        "description": "User Avatar 2"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1607503873903-c5e95f80d7b9?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzh8MHwxfHNlYXJjaHw0fHxwcm9mZXNzaW9uYWwlMjBoZWFkc2hvdCUyMHBvcnRyYWl0fGVufDB8fHx8MTc4MjgyMTM4MXww&ixlib=rb-4.1.0&q=85",
+        "description": "User Avatar 3"
+      }
+    ],
+    "video_thumbnails": [
+      {
+        "url": "https://images.pexels.com/photos/23384401/pexels-photo-23384401.jpeg",
+        "description": "Review Project 1"
+      },
+      {
+        "url": "https://images.pexels.com/photos/30396798/pexels-photo-30396798.jpeg",
+        "description": "Review Project 2"
+      }
+    ],
+    "backgrounds": [
+      {
+        "url": "https://images.pexels.com/photos/12594043/pexels-photo-12594043.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Login/Hero Background (Abstract dark fluid)"
+      }
+    ]
+  },
+  "testing": {
+    "data_testid_rules": "ALL interactive elements (buttons, inputs, video controls, canvas tools, comment replies, pricing cards) MUST include a kebab-case `data-testid` attribute describing its role (e.g., `data-testid=\"play-video-button\"`, `data-testid=\"tool-draw-circle\"`)."
+  },
+  "instructions_to_main_agent": [
+    "Prioritize building the structural layout first: The 16:9 video player with absolute-positioned transparent canvas is the critical engineering task.",
+    "Implement the 'emergent.sh' aesthetic faithfully: dark, extremely clean, minimal radiuses, using #5A67D8 as the single accent color. DO NOT inject purple gradients.",
+    "For the toolbar, use an absolute or fixed floating dock with backdrop-blur. For mobile, stick it to the bottom.",
+    "Ensure all fonts fall back gracefully if Geist is not loaded, but try to use standard sans stack tuned to look crisp.",
+    "P2P Avatar rings and Watermark animations must rely on Tailwind utility classes or custom CSS keyframes, not heavy JS.",
+    "Ad modal must pause background processes and intercept clicks until the 15s timer completes.",
+    "Use Shadcn UI but heavily strip out the 'default Vercel look' by applying our sharp borders, dark backgrounds, and flat interactions.",
+    "All .js components should be functional React components. Do not use TypeScript (.tsx). Use prop-types if necessary, but keep it modern ES6+ React."
+  ]
+}

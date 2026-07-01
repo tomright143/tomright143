@@ -503,6 +503,28 @@ async def admin_users(request: Request):
     rows = await db.users.find({}, {"_id": 0}).sort("last_login", -1).to_list(500)
     return rows
 
+@api_router.post("/admin/users/{user_id}/reset")
+async def reset_user_data(user_id: str, request: Request):
+    await require_admin(request)
+    target = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    if not target:
+        raise HTTPException(404, "User not found")
+    review_ids = [r["id"] async for r in db.reviews.find({"owner_id": user_id}, {"_id": 0, "id": 1})]
+    reviews_deleted = await db.reviews.delete_many({"owner_id": user_id})
+    anns_deleted = await db.annotations.delete_many({"owner_id": user_id})
+    comments_deleted = await db.comments.delete_many({"owner_id": user_id})
+    # also clean annotations/comments that belonged to the user's reviews
+    if review_ids:
+        await db.annotations.delete_many({"review_id": {"$in": review_ids}})
+        await db.comments.delete_many({"review_id": {"$in": review_ids}})
+        await db.review_viewers.delete_many({"review_id": {"$in": review_ids}})
+    return {
+        "ok": True,
+        "reviews_deleted": reviews_deleted.deleted_count,
+        "annotations_deleted": anns_deleted.deleted_count,
+        "comments_deleted": comments_deleted.deleted_count,
+    }
+
 @api_router.get("/admin/payments")
 async def admin_payments(request: Request):
     await require_admin(request)
@@ -642,7 +664,7 @@ async def ws_signal(ws: WebSocket, review_id: str, peer: str):
 
 @api_router.get("/")
 async def root():
-    return {"message": "Review.io API", "status": "ok"}
+    return {"message": "Worxpher API", "status": "ok"}
 
 app.include_router(api_router)
 

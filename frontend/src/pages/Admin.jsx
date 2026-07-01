@@ -41,13 +41,25 @@ export default function Admin() {
   const addAd = async () => { if (!newAd.title) return; await api.post("/admin/ads", newAd); setNewAd({ title: "", video_url: "", image_url: "", duration: 15, budget: 0, expiry: "" }); load(); };
   const delAd = async (id) => { await api.delete(`/admin/ads/${id}`); load(); };
 
+  const resetUser = async (u) => {
+    const first = window.confirm(`⚠️ RESET all data for ${u.email}?\n\nThis permanently deletes ALL their reviews, annotations and comments. This cannot be undone.`);
+    if (!first) return;
+    const typed = window.prompt(`To confirm, type the user's email exactly:\n${u.email}`);
+    if (typed?.trim().toLowerCase() !== u.email.toLowerCase()) { toast.error("Email did not match — reset cancelled"); return; }
+    try {
+      const r = await api.post(`/admin/users/${u.user_id}/reset`);
+      toast.success(`Wiped ${r.data.reviews_deleted} reviews · ${r.data.annotations_deleted} annotations · ${r.data.comments_deleted} comments`);
+      load();
+    } catch { toast.error("Reset failed"); }
+  };
+
   const TABS = [["stats","Overview"],["pricing","Pricing"],["payments","Payments"],["ads","Ads"],["admins","Admins"],["users","Users"]];
 
   return (
     <div className="min-h-screen bg-[#0A0A0B] text-[#EDEDF0]">
       <TopNav/>
       <main className="max-w-[1200px] mx-auto px-4 sm:px-8 py-10">
-        <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#5A67D8]">Admin · Review.io</p>
+        <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#5A67D8]">Admin · Worxpher</p>
         <h1 className="text-3xl font-semibold tracking-tight mt-1">Console.</h1>
         <div className="mt-6 flex gap-1 border-b border-[#232326] overflow-x-auto no-scrollbar">
           {TABS.map(([id, label]) => (
@@ -118,8 +130,8 @@ export default function Admin() {
           )}
           {tab === "users" && (
             <div className="border border-[#232326] rounded-sm bg-[#121214] overflow-hidden">
-              <table className="w-full text-sm"><thead><tr className="border-b border-[#232326] text-left"><th className="p-3 font-mono text-[10px] uppercase">User</th><th className="p-3 font-mono text-[10px] uppercase">Email</th><th className="p-3 font-mono text-[10px] uppercase">Plan</th><th className="p-3 font-mono text-[10px] uppercase">Last login</th></tr></thead><tbody>
-              {users.map(u => <tr key={u.user_id} className="border-b border-[#232326]"><td className="p-3">{u.name}</td><td className="p-3 font-mono text-xs">{u.email}</td><td className="p-3"><span className="font-mono text-[10px] uppercase px-2 py-0.5 border border-[#5A67D8] text-[#5A67D8] rounded-sm">{u.plan}</span></td><td className="p-3 font-mono text-xs text-[#8A8A93]">{u.last_login ? new Date(u.last_login).toLocaleString() : "—"}</td></tr>)}
+              <table className="w-full text-sm"><thead><tr className="border-b border-[#232326] text-left"><th className="p-3 font-mono text-[10px] uppercase">User</th><th className="p-3 font-mono text-[10px] uppercase">Email</th><th className="p-3 font-mono text-[10px] uppercase">Plan</th><th className="p-3 font-mono text-[10px] uppercase">Last login</th><th className="p-3 font-mono text-[10px] uppercase">Actions</th></tr></thead><tbody>
+              {users.map(u => <tr key={u.user_id} className="border-b border-[#232326]"><td className="p-3">{u.name}</td><td className="p-3 font-mono text-xs">{u.email}</td><td className="p-3"><span className="font-mono text-[10px] uppercase px-2 py-0.5 border border-[#5A67D8] text-[#5A67D8] rounded-sm">{u.plan}</span></td><td className="p-3 font-mono text-xs text-[#8A8A93]">{u.last_login ? new Date(u.last_login).toLocaleString() : "—"}</td><td className="p-3"><Button data-testid={`reset-user-${u.user_id}`} onClick={() => resetUser(u)} className="bg-[#1a0a0a] border border-[#EF4444] text-[#EF4444] hover:bg-[#EF4444] hover:text-white h-7 px-2 rounded-sm text-xs"><Trash2 className="w-3 h-3 mr-1"/>Reset data</Button></td></tr>)}
               </tbody></table>
             </div>
           )}

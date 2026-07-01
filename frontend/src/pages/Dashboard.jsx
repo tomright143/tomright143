@@ -6,6 +6,7 @@ import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Plus, Play, Trash2, Clock, Star, Share2, Users, Folder, TrendingUp, Award, Edit, AlertTriangle, X as XIcon } from "lucide-react";
@@ -60,12 +61,12 @@ export default function Dashboard() {
   const daysLeft = planUntil ? Math.max(0, Math.ceil((planUntil - new Date()) / (1000*60*60*24))) : null;
   const danger = daysLeft != null && daysLeft <= 7;
 
+  const [cancelOpen, setCancelOpen] = useState(false);
   const cancelPlan = async () => {
-    const ok = window.confirm(`Cancel your ${user.plan} plan?\n\nIt will remain active until expiry, then revert to Free (3-project cap). You can resubscribe anytime.`);
-    if (!ok) return;
     try {
       await api.post("/billing/cancel");
       toast.success("Plan cancelled — active till expiry date");
+      setCancelOpen(false);
       await refresh();
       fetchAll();
     } catch (e) { toast.error("Could not cancel — try again"); }
@@ -120,7 +121,7 @@ export default function Dashboard() {
             </div>
             <div className="flex gap-2">
               <Button onClick={() => navigate("/pricing")} data-testid="pay-advance" className={`${danger ? "bg-[#EF4444] hover:bg-[#dc2626]" : "bg-[#5A67D8] hover:bg-[#4C51BF]"} text-white rounded-sm h-9`}>Pay advance</Button>
-              {!user.cancel_at_end ? <Button onClick={cancelPlan} data-testid="cancel-plan" className="bg-[#0A0A0B] border border-[#232326] hover:bg-[#1a1a1d] text-white rounded-sm h-9 text-xs">Cancel plan</Button> : <span className="font-mono text-[10px] uppercase tracking-wider text-[#F59E0B] self-center">Cancelled · ends on expiry</span>}
+              {!user.cancel_at_end ? <Button onClick={(e) => { e.stopPropagation(); setCancelOpen(true); }} data-testid="cancel-plan" className="bg-[#0A0A0B] border border-[#232326] hover:bg-[#1a1a1d] text-white rounded-sm h-9 text-xs">Cancel plan</Button> : <span className="font-mono text-[10px] uppercase tracking-wider text-[#F59E0B] self-center">Cancelled · ends on expiry</span>}
             </div>
           </div>
         )}
@@ -214,6 +215,18 @@ export default function Dashboard() {
           </DialogContent>
         </Dialog>
       )}
+      <AlertDialog open={cancelOpen} onOpenChange={setCancelOpen}>
+        <AlertDialogContent className="bg-[#121214] border-[#232326] text-[#EDEDF0]">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-mono uppercase tracking-wider text-sm">Cancel {user?.plan} plan?</AlertDialogTitle>
+            <AlertDialogDescription className="text-[#8A8A93] text-sm">It will remain active until the expiry date, then revert to Free (3-project cap). You can resubscribe anytime.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="cancel-plan-dismiss" className="bg-[#0A0A0B] border-[#232326] text-white hover:bg-[#1a1a1d] rounded-sm">Keep plan</AlertDialogCancel>
+            <AlertDialogAction data-testid="confirm-cancel-plan" onClick={cancelPlan} className="bg-[#EF4444] hover:bg-[#dc2626] text-white rounded-sm">Yes, cancel</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <Footer/>
     </div>
   );

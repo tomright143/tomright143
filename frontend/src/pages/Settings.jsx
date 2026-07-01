@@ -44,7 +44,7 @@ export default function Settings() {
       <div style="display:flex;justify-content:space-between;align-items:flex-start"><img src="${COMPANY.logo}" style="height:50px"/><div class="right"><h1>INVOICE</h1><div class="muted">#${inv.id}</div><div class="muted">${new Date(inv.created_at).toLocaleDateString()}</div></div></div>
       <div style="display:flex;justify-content:space-between;margin-top:24px"><div><b>${COMPANY.name}</b><div class="muted">${COMPANY.address}</div><div class="muted">GSTIN: ${COMPANY.gst}</div></div><div class="right"><b>Bill to</b><div class="muted">${inv.name}</div><div class="muted">${inv.email}</div>${user.gst_no ? `<div class="muted">GSTIN: ${user.gst_no}</div>`:""}</div></div>
       <table><thead><tr><th>Description</th><th class="right">Amount</th></tr></thead><tbody>
-      <tr><td>Review.io · ${inv.plan} plan · 1 month</td><td class="right">₹${inv.base}</td></tr>
+      <tr><td>Worxpher · ${inv.plan} plan · 1 month</td><td class="right">₹${inv.base}</td></tr>
       <tr><td>GST @ 18%</td><td class="right">₹${inv.gst}</td></tr>
       <tr><td><b>Total</b></td><td class="right"><b>₹${inv.amount}</b></td></tr>
       </tbody></table>

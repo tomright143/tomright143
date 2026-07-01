@@ -7,7 +7,7 @@ export default function AnnotationCanvas({ annotations, currentTime, tool, color
   const [drawing, setDrawing] = useState(false);
   const [points, setPoints] = useState([]);
 
-  // Draw annotations whose timestamp is near currentTime (±2s window)
+  // Draw annotations whose timestamp is near currentTime (±0.15s window — frame precision)
   useEffect(() => {
     const c = canvasRef.current;
     if (!c) return;
@@ -15,7 +15,7 @@ export default function AnnotationCanvas({ annotations, currentTime, tool, color
     const w = c.width, h = c.height;
     ctx.clearRect(0, 0, w, h);
 
-    const visible = annotations.filter(a => Math.abs(a.timestamp - currentTime) < 2.5);
+    const visible = annotations.filter(a => Math.abs(a.timestamp - currentTime) < 0.15);
     visible.forEach(a => drawAnnotation(ctx, a, w, h));
 
     if (drawing && points.length > 0) {

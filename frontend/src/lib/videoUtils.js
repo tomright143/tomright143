@@ -14,7 +14,7 @@ export function parseVideoUrl(url) {
 export function getEmbedUrl(type, id) {
   if (type === "youtube") return `https://www.youtube.com/embed/${id}?enablejsapi=1&modestbranding=1&rel=0`;
   if (type === "vimeo") return `https://player.vimeo.com/video/${id}`;
-  if (type === "gdrive") return `https://drive.google.com/file/d/${id}/preview`;
+  if (type === "gdrive") return `https://drive.google.com/file/d/${id}/preview?usp=drivesdk`;
   return "";
 }
 

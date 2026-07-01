@@ -12,8 +12,14 @@ import P2PCallPanel from "@/components/P2PCallPanel";
 import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { Play, Pause, SkipBack, SkipForward, FileDown, MessageCircle, Users, Volume2, VolumeX, Share2, Copy } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Play, Pause, SkipBack, SkipForward, FileDown, Users, Volume2, VolumeX, Share2, Edit, Trash2, Loader2 } from "lucide-react";
 import { getEmbedUrl, formatTimecode } from "@/lib/videoUtils";
+import { jsPDF } from "jspdf";
 import { toast } from "sonner";
 
 export default function Workspace() {
@@ -31,6 +37,11 @@ export default function Workspace() {
   const [muted, setMuted] = useState(false);
   const [adOpen, setAdOpen] = useState(false);
   const [comments, setComments] = useState([]);
+  const [exportState, setExportState] = useState({ open: false, current: 0, total: 0 });
+  const [editOpen, setEditOpen] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editAllow, setEditAllow] = useState(true);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const ytPlayerRef = useRef(null);
   const iframeRef = useRef(null);
   useEffect(() => {
@@ -112,17 +123,21 @@ export default function Workspace() {
     setAnnotations(prev => prev.filter(a => a.owner_id !== user.user_id));
   };
 
-  const exportFrame = () => {
-    const frameComments = comments.filter(c => c.timestamp != null && Math.abs(c.timestamp - currentTime) < 3);
-    const frameAnns = annotations.filter(a => Math.abs(a.timestamp - currentTime) < 1.5);
-    const thumb = review.video_type === "youtube" ? `https://i.ytimg.com/vi/${review.video_id}/hqdefault.jpg` : "";
-    const brand = user.brand_logo ? `<img src="${user.brand_logo}" style="height:36px"/>` : `<div style="font-family:monospace;letter-spacing:.2em;text-transform:uppercase;font-weight:600">REVIEW.IO</div>`;
-    const cmtHtml = frameComments.map(c => `<div style="display:flex;gap:10px;padding:10px;border-bottom:1px solid #ddd;align-items:flex-start"><img src="${c.owner_picture||''}" style="width:32px;height:32px;border-radius:50%;background:#eee"/><div><div style="font-weight:600;font-size:13px">${c.owner_name} <span style="font-family:monospace;font-size:10px;color:#5A67D8">@${formatTimecode(c.timestamp)}</span></div><div style="font-size:13px;margin-top:2px">${c.text}</div></div></div>`).join("");
-    const annHtml = frameAnns.map(a => `<li>${a.tool} by ${a.owner_name} @ ${formatTimecode(a.timestamp)}</li>`).join("");
-    const w = window.open("", "_blank");
-    w.document.write(`<!doctype html><html><head><title>Frame ${formatTimecode(currentTime)} — ${review.title}</title><style>body{font-family:system-ui;color:#111;padding:32px;max-width:780px;margin:auto}img.t{width:100%;border-radius:6px}h1{margin:8px 0}p.muted{color:#777;font-size:12px}ul{padding-left:18px}.foot{font-family:monospace;font-size:10px;color:#888;border-top:1px solid #ddd;padding-top:12px;margin-top:32px}</style></head><body>${brand}<h1>${review.title}</h1><p class="muted">Frame snapshot @ <b>${formatTimecode(currentTime)}</b> · ${new Date().toLocaleString()}</p>${thumb ? `<img class="t" src="${thumb}"/>` : ""}<h3>Annotations at this frame (${frameAnns.length})</h3><ul>${annHtml || "<li>none</li>"}</ul><h3>Comments around this frame (${frameComments.length})</h3>${cmtHtml || "<p class='muted'>No comments</p>"}<div class="foot">Review.io by Black Fxtudio · exported by ${user.email}</div></body></html>`);
-    w.document.close();
-    setTimeout(() => w.print(), 500);
+  const openEdit = () => { setEditTitle(review.title); setEditAllow(review.allow_download); setEditOpen(true); };
+  const saveEdit = async () => {
+    try {
+      const r = await api.patch(`/reviews/${id}`, { title: editTitle, allow_download: editAllow });
+      setReview(r.data);
+      setEditOpen(false);
+      toast.success("Project updated");
+    } catch { toast.error("Could not update project"); }
+  };
+  const deleteProject = async () => {
+    try {
+      await api.delete(`/reviews/${id}`);
+      toast.success("Project deleted");
+      navigate("/dashboard");
+    } catch { toast.error("Could not delete"); }
   };
 
   const handlePdfExport = useCallback(() => {
@@ -130,55 +145,113 @@ export default function Workspace() {
     doExportPdf();
   }, [user]); // eslint-disable-line
 
+  const loadImage = (src, cors) => new Promise((resolve) => {
+    const img = new Image();
+    if (cors) img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+
+  // Build one 16:9 composite (video thumbnail + annotation overlay) as a JPEG data-url
+  const buildFrameImage = async (overlayDataUrl, thumbImg) => {
+    const cw = 640, ch = 360;
+    const off = document.createElement("canvas");
+    off.width = cw; off.height = ch;
+    const ctx = off.getContext("2d");
+    ctx.fillStyle = "#000"; ctx.fillRect(0, 0, cw, ch);
+    if (thumbImg) {
+      const ir = thumbImg.width / thumbImg.height, cr = cw / ch;
+      let dw = cw, dh = ch, dx = 0, dy = 0;
+      if (ir > cr) { dh = ch; dw = ch * ir; dx = (cw - dw) / 2; } else { dw = cw; dh = cw / ir; dy = (ch - dh) / 2; }
+      ctx.drawImage(thumbImg, dx, dy, dw, dh);
+    }
+    if (overlayDataUrl) {
+      const ov = await loadImage(overlayDataUrl, false);
+      if (ov) ctx.drawImage(ov, 0, 0, cw, ch);
+    }
+    try { return off.toDataURL("image/jpeg", 0.85); } catch { return null; }
+  };
+
   const doExportPdf = async () => {
     if (!review) { toast.error("Review not loaded"); return; }
-    const timed = comments.filter(c => c.timestamp != null).sort((a,b) => a.timestamp - b.timestamp);
+    const timed = comments.filter(c => c.timestamp != null).sort((a, b) => a.timestamp - b.timestamp);
     if (timed.length === 0) { toast.error("No timestamped comments to compile"); return; }
     const p = ytPlayerRef.current;
     const canvas = document.querySelector("[data-testid='annotation-canvas']");
+    const thumbSrc = review.video_type === "youtube" ? `https://i.ytimg.com/vi/${review.video_id}/maxresdefault.jpg` : "";
+    const thumbImg = thumbSrc ? await loadImage(thumbSrc, true) : null;
+
+    setExportState({ open: true, current: 0, total: timed.length });
     const frames = [];
-    const thumb = review.video_type === "youtube" ? `https://i.ytimg.com/vi/${review.video_id}/maxresdefault.jpg` : "";
-    toast.message(`Compiling Review List · ${timed.length} frames…`);
-    for (const c of timed) {
+    for (let i = 0; i < timed.length; i++) {
+      const c = timed[i];
       try {
         if (p && p.seekTo) { p.seekTo(c.timestamp, true); p.pauseVideo(); }
-        await new Promise(r => setTimeout(r, 700));
-        const overlay = canvas ? canvas.toDataURL("image/png") : "";
-        frames.push({ comment: c, overlay });
-      } catch { frames.push({ comment: c, overlay: "" }); }
+        await new Promise(r => setTimeout(r, 650));
+        let overlay = "";
+        try { overlay = canvas ? canvas.toDataURL("image/png") : ""; } catch { overlay = ""; }
+        const img = await buildFrameImage(overlay, thumbImg);
+        frames.push({ comment: c, img });
+      } catch { frames.push({ comment: c, img: null }); }
+      setExportState({ open: true, current: i + 1, total: timed.length });
     }
-    const brand = user.brand_logo ? `<img src="${user.brand_logo}" style="height:36px"/>` : `<div style="font-family:monospace;letter-spacing:.2em;text-transform:uppercase;font-weight:600;font-size:14px">REVIEW.IO</div>`;
-    const itemsHtml = frames.map(({comment, overlay}) => `
-      <div class="row">
-        <div class="frame"><img src="${thumb}" class="thumb"/>${overlay ? `<img src="${overlay}" class="overlay"/>` : ""}</div>
-        <div class="meta">
-          <div class="head"><img src="${comment.owner_picture||''}" class="avatar"/><div><div class="name">${comment.owner_name}</div><div class="tc">@ ${formatTimecode(comment.timestamp)}</div></div></div>
-          <p class="txt">${(comment.text||"").replace(/</g,"&lt;")}</p>
-        </div>
-      </div>`).join("");
-    const w = window.open("", "_blank");
-    w.document.write(`<!doctype html><html><head><title>Review List · ${review.title}</title><style>
-      @page { size:A4; margin:18mm }
-      body{font-family:system-ui;color:#111;max-width:780px;margin:auto;padding:24px}
-      h1{margin:8px 0;font-size:24px}p.sub{color:#777;font-size:12px;margin:0}
-      .row{display:flex;gap:14px;padding:14px 0;border-bottom:1px solid #e5e5e5;page-break-inside:avoid}
-      .frame{position:relative;width:280px;flex-shrink:0;background:#000;border-radius:6px;overflow:hidden;aspect-ratio:16/9}
-      .thumb,.overlay{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-      .overlay{object-fit:fill}
-      .meta{flex:1;min-width:0}
-      .head{display:flex;gap:8px;align-items:center}.avatar{width:32px;height:32px;border-radius:50%;background:#eee;object-fit:cover}
-      .name{font-weight:600;font-size:13px}.tc{font-family:monospace;font-size:11px;color:#5A67D8}
-      .txt{font-size:13px;margin:6px 0 0;line-height:1.5}
-      .foot{margin-top:36px;font-family:monospace;font-size:10px;color:#888;border-top:1px solid #ddd;padding-top:12px;text-align:center}
-    </style></head><body>
-      <div style="display:flex;justify-content:space-between;align-items:flex-start">${brand}<div style="text-align:right"><h1 style="margin:0">Review List</h1><p class="sub">${new Date().toLocaleString()}</p></div></div>
-      <h2 style="margin-top:14px;font-size:18px">${review.title}</h2>
-      <p class="sub">${timed.length} timestamped comments · exported by ${user.email}</p>
-      ${itemsHtml || "<p class='sub' style='margin-top:24px'>No timestamped comments to compile.</p>"}
-      <div class="foot">Review.io · by Black Fxtudio · ${user.email}</div>
-    </body></html>`);
-    w.document.close();
-    setTimeout(() => w.print(), 800);
+
+    // ===== Compile PDF =====
+    const doc = new jsPDF({ unit: "pt", format: "a4" });
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const M = 40;
+    const accent = [90, 103, 216];
+
+    // Header
+    doc.setFillColor(10, 10, 11); doc.rect(0, 0, pageW, 70, "F");
+    doc.setTextColor(255, 255, 255); doc.setFont("helvetica", "bold"); doc.setFontSize(20);
+    doc.text("WORXPHER", M, 34);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(150, 150, 160);
+    doc.text("Frame-by-frame review list", M, 50);
+    doc.setTextColor(180, 180, 190); doc.setFontSize(8);
+    doc.text(new Date().toLocaleString(), pageW - M, 34, { align: "right" });
+    doc.setTextColor(0, 0, 0); doc.setFont("helvetica", "bold"); doc.setFontSize(14);
+    doc.text(doc.splitTextToSize(review.title, pageW - 2 * M), M, 96);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(110, 110, 120);
+    doc.text(`${timed.length} timestamped comments · exported by ${user.email}`, M, 112);
+
+    let y = 132;
+    const imgW = 230, imgH = imgW * 9 / 16;
+    frames.forEach(({ comment, img }, idx) => {
+      const blockH = Math.max(imgH, 90) + 18;
+      if (y + blockH > pageH - 40) { doc.addPage(); y = 40; }
+      // frame image
+      if (img) { try { doc.addImage(img, "JPEG", M, y, imgW, imgH); } catch { /* skip */ } }
+      else { doc.setFillColor(20, 20, 22); doc.rect(M, y, imgW, imgH, "F"); }
+      // meta column
+      const tx = M + imgW + 16;
+      const tw = pageW - tx - M;
+      doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(20, 20, 24);
+      doc.text(doc.splitTextToSize(comment.owner_name || "Reviewer", tw), tx, y + 14);
+      doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(accent[0], accent[1], accent[2]);
+      doc.text(`@ ${formatTimecode(comment.timestamp)}`, tx, y + 30);
+      doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(50, 50, 55);
+      doc.text(doc.splitTextToSize(comment.text || "", tw), tx, y + 48);
+      // divider
+      doc.setDrawColor(225, 225, 228); doc.line(M, y + blockH - 8, pageW - M, y + blockH - 8);
+      y += blockH;
+    });
+
+    // Footer on each page
+    const pages = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pages; i++) {
+      doc.setPage(i);
+      doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(140, 140, 150);
+      doc.text(`Worxpher · by Black Fxtudio · ${user.email}`, M, pageH - 20);
+      doc.text(`${i} / ${pages}`, pageW - M, pageH - 20, { align: "right" });
+    }
+
+    const safeTitle = (review.title || "review").replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+    doc.save(`${safeTitle}-worxpher-review.pdf`);
+    setExportState({ open: false, current: 0, total: 0 });
+    toast.success("Review PDF downloaded");
   };
 
   const shareLink = () => {
@@ -205,6 +278,8 @@ export default function Workspace() {
             </div>
             <div className="flex items-center gap-2">
               <span className="font-mono text-xs text-[#5A67D8]" data-testid="current-timecode">{formatTimecode(currentTime)} / {formatTimecode(duration)}</span>
+              <Button data-testid="workspace-edit-button" onClick={openEdit} className="bg-[#121214] border border-[#232326] hover:bg-[#1a1a1d] rounded-sm h-9 w-9 p-0"><Edit className="w-4 h-4"/></Button>
+              <Button data-testid="workspace-delete-button" onClick={() => setDeleteOpen(true)} className="bg-[#121214] border border-[#232326] hover:bg-[#1a0a0a] hover:border-[#EF4444] text-[#EF4444] rounded-sm h-9 w-9 p-0"><Trash2 className="w-4 h-4"/></Button>
               <Button data-testid="share-button" onClick={shareLink} className="bg-[#121214] border border-[#232326] hover:bg-[#1a1a1d] rounded-sm h-9"><Share2 className="w-4 h-4 mr-2"/><span className="font-mono text-xs uppercase tracking-wider">Share</span></Button>
               <Button data-testid="export-pdf-button" onClick={handlePdfExport} className="bg-[#5A67D8] hover:bg-[#4C51BF] text-white rounded-sm h-9"><FileDown className="w-4 h-4 mr-2"/><span className="font-mono text-xs uppercase tracking-wider">Export PDF</span></Button>
             </div>
@@ -214,7 +289,7 @@ export default function Workspace() {
             {review.video_type === "youtube" ? (
               <iframe ref={iframeRef} src={embed} title="player" className="absolute inset-0 w-full h-full" allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen/>
             ) : (
-              <iframe src={embed} title="player" className="absolute inset-0 w-full h-full" allow="autoplay; encrypted-media; fullscreen" allowFullScreen/>
+              <iframe src={embed} title="player" className="absolute inset-0 w-full h-full" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowFullScreen/>
             )}
             {showWatermark && false && <Watermark email={user.email}/>}
             <AnnotationCanvas annotations={annotations} currentTime={currentTime} tool={tool} color={color} brush={brush} onAdd={addAnnotation} enabled={tool !== "select" && review.video_type === "youtube"}/>
@@ -268,6 +343,47 @@ export default function Workspace() {
       </main>
       <Footer/>
       <AdLockModal open={adOpen} onClose={() => setAdOpen(false)} onComplete={() => { setAdOpen(false); doExportPdf(); }} durationSec={15}/>
+
+      {/* Edit project dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="bg-[#121214] border-[#232326] text-[#EDEDF0]">
+          <DialogHeader><DialogTitle className="font-mono uppercase tracking-wider text-sm">Edit project</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+            <div><Label className="font-mono text-[10px] uppercase tracking-[0.15em] text-[#8A8A93]">Title</Label><Input data-testid="workspace-edit-title" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} className="bg-[#0A0A0B] border-[#232326] rounded-sm mt-1"/></div>
+            <div className="flex items-center justify-between pt-2 border-t border-[#232326]"><Label className="font-mono text-[10px] uppercase tracking-[0.15em] text-[#8A8A93]">Allow clean download</Label><Switch data-testid="workspace-edit-allow" checked={editAllow} onCheckedChange={setEditAllow}/></div>
+          </div>
+          <DialogFooter><Button onClick={saveEdit} data-testid="workspace-save-edit" className="bg-[#5A67D8] hover:bg-[#4C51BF] rounded-sm">Save</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete project confirm */}
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent className="bg-[#121214] border-[#232326] text-[#EDEDF0]">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-mono uppercase tracking-wider text-sm">Delete this project?</AlertDialogTitle>
+            <AlertDialogDescription className="text-[#8A8A93] text-sm">This permanently removes the review and all its annotations & comments. This cannot be undone.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="workspace-delete-dismiss" className="bg-[#0A0A0B] border-[#232326] text-white hover:bg-[#1a1a1d] rounded-sm">Keep it</AlertDialogCancel>
+            <AlertDialogAction data-testid="workspace-confirm-delete" onClick={deleteProject} className="bg-[#EF4444] hover:bg-[#dc2626] text-white rounded-sm">Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* PDF export progress */}
+      {exportState.open && (
+        <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur flex items-center justify-center px-6" data-testid="pdf-export-modal">
+          <div className="w-full max-w-sm border border-[#232326] bg-[#121214] rounded-sm p-6 text-center">
+            <Loader2 className="w-8 h-8 text-[#5A67D8] animate-spin mx-auto"/>
+            <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#5A67D8] mt-4">Compiling review PDF</p>
+            <p className="text-lg font-semibold mt-1" data-testid="pdf-export-progress">Capturing frame {exportState.current} of {exportState.total}</p>
+            <div className="w-full h-1.5 bg-[#232326] rounded-sm mt-4 overflow-hidden">
+              <div className="h-full bg-[#5A67D8] transition-all duration-200" style={{ width: `${exportState.total ? (exportState.current / exportState.total) * 100 : 0}%` }}/>
+            </div>
+            <p className="font-mono text-[10px] text-[#5C5C66] mt-3">Please keep this tab active — seeking the player to each timestamp.</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

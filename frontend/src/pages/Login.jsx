@@ -1,6 +1,6 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
-import { Film, Layers, Lock, Sparkles } from "lucide-react";
+import { Layers, Lock, Sparkles } from "lucide-react";
 
 // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
 export default function Login() {
@@ -18,10 +18,7 @@ export default function Login() {
       {/* Left: Brand panel */}
       <div className="hidden lg:flex relative flex-col justify-between p-12 border-r border-[#232326] bg-grid overflow-hidden">
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-sm bg-[#5A67D8] flex items-center justify-center">
-            <Film className="w-4 h-4 text-white" />
-          </div>
-          <span className="font-mono text-sm tracking-widest uppercase">Review.io</span>
+          <img src="/worxpher-logo.png" alt="Worxpher" className="h-8"/>
         </div>
         <div className="space-y-6 max-w-md rise">
           <p className="font-mono text-xs uppercase tracking-[0.2em] text-[#5C5C66]">Frame-Accurate · Zero-Storage · Collaborative</p>
@@ -44,10 +41,7 @@ export default function Login() {
       <div className="flex items-center justify-center p-8 sm:p-12">
         <div className="w-full max-w-sm space-y-8 rise">
           <div className="lg:hidden flex items-center gap-2">
-            <div className="w-7 h-7 rounded-sm bg-[#5A67D8] flex items-center justify-center">
-              <Film className="w-4 h-4 text-white" />
-            </div>
-            <span className="font-mono text-sm tracking-widest uppercase">Review.io</span>
+            <img src="/worxpher-logo.png" alt="Worxpher" className="h-8"/>
           </div>
           <div>
             <h2 className="text-3xl font-semibold tracking-tight">Sign in</h2>

@@ -1,7 +1,7 @@
 import React from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import { Film, LogOut, User as UserIcon, CreditCard } from "lucide-react";
+import { LogOut, User as UserIcon, CreditCard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -19,10 +19,7 @@ export default function TopNav() {
           {user?.brand_logo ? (
             <img src={user.brand_logo} alt="brand" className="h-6"/>
           ) : (
-            <>
-              <div className="w-6 h-6 rounded-sm bg-[#5A67D8] flex items-center justify-center"><Film className="w-3.5 h-3.5 text-white"/></div>
-              <span className="font-mono text-xs tracking-[0.2em] uppercase">Review.io</span>
-            </>
+            <img src="/worxpher-logo.png" alt="Worxpher" className="h-7"/>
           )}
         </Link>
         <nav className="flex items-center gap-2">

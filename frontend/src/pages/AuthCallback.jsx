@@ -6,7 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
 export default function AuthCallback() {
   const navigate = useNavigate();
-  const { setUser } = useAuth();
+  const { refresh } = useAuth();
   const processed = useRef(false);
 
   useEffect(() => {
@@ -20,14 +20,18 @@ export default function AuthCallback() {
       try {
       const r = await api.post("/auth/session", { session_id });
       window.localStorage.setItem("review_io_last_email", r.data.user.email);
-      setUser(r.data.user);
-        window.history.replaceState(null, "", "/dashboard");
-        navigate("/dashboard", { replace: true, state: { user: r.data.user } });
+      // Refresh via /auth/me so is_admin + plan_until are populated (fixes admin link visibility)
+      await refresh();
+        const next = window.sessionStorage.getItem("post_login_redirect");
+        window.sessionStorage.removeItem("post_login_redirect");
+        const dest = next && next.startsWith("/") ? next : "/dashboard";
+        window.history.replaceState(null, "", dest);
+        navigate(dest, { replace: true });
       } catch (e) {
         navigate("/login", { replace: true });
       }
     })();
-  }, [navigate, setUser]);
+  }, [navigate, refresh]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">

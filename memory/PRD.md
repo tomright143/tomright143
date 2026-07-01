@@ -34,6 +34,21 @@ Production-ready, mobile-responsive cross-platform web app called **"Zero-Storag
 - Settings: white-label brand logo upload (Studio only, persisted as data-URL)
 - Mobile: bottom sheet drawer for comments + bottom sheet for P2P panel; horizontal scrolling toolbar dock
 
+## Implemented in Iteration 2 — Worxpher fork (Jun 2026)
+- **Rebrand Review.io → Worxpher**: transparent cropped logo at `/frontend/public/worxpher-logo.png` used in TopNav, Login, Footer, SharedReview, index.html title, Admin header; PDF/invoice branding text switched to "Worxpher"; API root returns "Worxpher API".
+- **PDF Export Engine rebuild** (Workspace.jsx): jsPDF-based compiled review list — progress modal ("Capturing frame X of Y"), seeks player to each of ALL timestamped comments, composites YouTube thumbnail + annotation-canvas overlay, downloads a multi-page A4 PDF with dark-text Worxpher wordmark header + per-page footer.
+- **Cancel Plan bug FIXED** (Dashboard.jsx): replaced flaky window.confirm with shadcn AlertDialog (confirm-cancel-plan) + e.stopPropagation; hits /api/billing/cancel then refresh(). Verified working by testing agent.
+- **Google Drive playback**: embed URL now `/preview?usp=drivesdk` + iframe allow autoplay (videoUtils.js).
+- **Admin link visibility FIXED**: AuthCallback now calls refresh() (→ /auth/me) after session so is_admin/plan_until populate immediately.
+- **Workspace Edit/Delete**: header buttons (workspace-edit-button/delete-button) with edit dialog + delete confirm → navigates to dashboard.
+- **Admin Reset User Data**: backend POST /api/admin/users/{user_id}/reset wipes user's reviews/annotations/comments; Admin Users tab has reset-user-{id} button with double-confirm (confirm + type-email prompt).
+- **Pricing overhaul** (Pricing.jsx): per-plan accent colors + hover lift/glow, prominent "Open in UPI app" CTA (upi-deeplink), GPay/PhonePe/Paytm brand chips, mobile auto-opens UPI pay sheet on plan tap.
+- **Annotation frame precision**: visible window tightened ±2.5s → ±0.15s (AnnotationCanvas.jsx).
+- **Share link auth gate**: backend already required auth; SharedReview now shows shared-auth-gate + Google sign-in for unauthenticated visitors; post-login redirect returns to the shared URL (sessionStorage). Any logged-in user can view.
+
+## Test Status (updated)
+- iteration_2.json — backend 100% / frontend 100%. Recurring cancel-plan bug CONFIRMED FIXED. No critical/minor issues.
+
 ## Deferred / Backlog (P1)
 - Real Razorpay live keys (orders + webhook)
 - Self-serve ad upload & scheduling for premium business users

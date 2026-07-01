@@ -62,6 +62,20 @@ Production-ready, mobile-responsive cross-platform web app called **"Zero-Storag
 ## Test Status (updated)
 - iteration_3.json — backend 8/8 / frontend 100%. No bugs. NOTE: live WebRTC media (local broadcast + P2P calling) verified at DOM/endpoint/signaling level only; **actual media streaming needs manual 2-browser validation**.
 
+## Implemented in Iteration 4 — Local file picker + Admin billing engine (Jun 2026)
+- **Local file picker in Create dialog**: "Locate video file…" input in the New Review dialog; picked File is carried to the workspace via an in-memory `localFileStore` and auto-loads for live broadcast.
+- **Enforced per-plan feature limits**: `plan_config` (free/creator/studio/business) with limits max_reviews, max_reviewers, ads_on_export, white_label, local_broadcast, pdf_export, storage_gb. `/auth/me` returns the user's `limits`. Enforced server-side: review count cap, local-broadcast gating (create_review), reviewer cap (shared join), white-label fields (settings). Frontend gates: Dashboard local-source lock, Settings white-label, Workspace PDF/ads.
+- **Plan enable/disable**: disabled plans are hidden from Pricing.
+- **Offers**: per-plan percent + until-date; Pricing shows strikethrough + "% off" badge and the discounted UPI amount auto-applies.
+- **Coupons**: admin CRUD (`/admin/coupons`); percentage, any plan, single-use per user, expiry, optional new-users-only. Applied on the Pricing UPI panel ("Have a coupon?") which recalculates the amount; redemption is burned only on admin approval.
+- Admin UI: new **Plans & Offers** and **Coupons** tabs.
+
+### Bugfixes this iteration (found by testing agent, fixed & re-verified)
+- Fixed FREE users being able to create local-broadcast reviews (was DB `plan_config` pollution). `/admin/plans/config` now persists **only deltas** over defaults (never a full snapshot), added `/admin/plans/config/reset`, and cleaned the stale doc. Verified via curl: free→local 403, free 4th review 403, creator max_reviews -1.
+
+## Test Status (updated)
+- iteration_4.json/pytest: backend billing 16/16 (after fix). iteration_5.json: frontend billing UI 8/8, no bugs. WebRTC live media still MANUAL 2-browser test only.
+
 ## Deferred / Backlog (P1)
 - Real Razorpay live keys (orders + webhook)
 - Self-serve ad upload & scheduling for premium business users

@@ -5,7 +5,7 @@ import Footer from "@/components/Footer";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -102,7 +102,7 @@ export default function Dashboard() {
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild><Button data-testid="new-review-button" className="bg-[#5A67D8] hover:bg-[#4C51BF] text-white rounded-sm h-11 px-5"><Plus className="w-4 h-4 mr-2"/>New review</Button></DialogTrigger>
             <DialogContent className="bg-[#121214] border-[#232326] text-[#EDEDF0]">
-              <DialogHeader><DialogTitle className="font-mono uppercase tracking-wider text-sm">Create review</DialogTitle></DialogHeader>
+              <DialogHeader><DialogTitle className="font-mono uppercase tracking-wider text-sm">Create review</DialogTitle><DialogDescription className="text-[#8A8A93] text-xs">Add a YouTube/Vimeo link or broadcast a local file live.</DialogDescription></DialogHeader>
               <div className="space-y-4 py-2">
                 <div className="space-y-1.5"><Label className="font-mono text-[10px] uppercase tracking-[0.15em] text-[#8A8A93]">Title</Label><Input data-testid="new-review-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Q4 brand cut v3" className="bg-[#0A0A0B] border-[#232326] rounded-sm"/></div>
                 <div className="flex gap-2">

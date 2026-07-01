@@ -79,7 +79,7 @@ export default function AnnotationCanvas({ annotations, currentTime, tool, color
   };
 
   return (
-    <div ref={containerRef} className="absolute inset-0">
+    <div ref={containerRef} className="absolute inset-0" style={{ pointerEvents: "none" }}>
       <canvas
         ref={canvasRef}
         data-testid="annotation-canvas"

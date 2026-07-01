@@ -17,9 +17,13 @@ export default function CommentSidebar({ reviewId, currentTime, onSeek }) {
     const r = await api.get(`/comments/${reviewId}`);
     setComments(r.data);
   };
-  useEffect(() => { refresh(); api.get("/team").then(r => setTeam(r.data)); }, [reviewId]); // eslint-disable-line
+  // Privacy: only users currently ACTIVE on this review can be seen & @mentioned
+  const refreshActive = async () => {
+    try { const r = await api.get(`/reviews/${reviewId}/presence`); setTeam(r.data.users || []); } catch { /* */ }
+  };
+  useEffect(() => { refresh(); refreshActive(); }, [reviewId]); // eslint-disable-line
   useEffect(() => {
-    const iv = setInterval(() => { refresh().catch(() => {}); }, 4000);
+    const iv = setInterval(() => { refresh().catch(() => {}); refreshActive(); }, 4000);
     return () => clearInterval(iv);
   }, [reviewId]); // eslint-disable-line
 

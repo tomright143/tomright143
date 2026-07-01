@@ -13,7 +13,9 @@ import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { getEmbedUrl, formatTimecode } from "@/lib/videoUtils";
-import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Users } from "lucide-react";
+import { exportReviewPdf } from "@/lib/exportReviewPdf";
+import { toast } from "sonner";
+import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Users, FileDown, Loader2 } from "lucide-react";
 
 export default function SharedReview() {
   const { token } = useParams();
@@ -29,8 +31,22 @@ export default function SharedReview() {
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
   const [authRequired, setAuthRequired] = useState(false);
+  const [exportState, setExportState] = useState({ open: false, current: 0, total: 0 });
   const ytPlayerRef = useRef(null);
   const iframeRef = useRef(null);
+
+  const doExport = async () => {
+    if (!user) { doLogin(); return; }
+    if (user.limits && user.limits.pdf_export === false) { toast.error("PDF export isn't available on your plan."); return; }
+    const p = ytPlayerRef.current;
+    const player = review.video_type === "youtube" && p ? { seek: (t) => { p.seekTo(t, true); p.pauseVideo(); } } : null;
+    await exportReviewPdf({
+      review, user, player,
+      onStart: (total) => setExportState({ open: true, current: 0, total }),
+      onProgress: (cur) => setExportState(s => ({ ...s, current: cur })),
+      onFinish: () => setExportState({ open: false, current: 0, total: 0 }),
+    });
+  };
 
   const doLogin = () => {
     window.sessionStorage.setItem("post_login_redirect", window.location.pathname);
@@ -119,6 +135,7 @@ export default function SharedReview() {
         </div>
         <div className="flex items-center gap-3">
           {user && <PresenceBar reviewId={review.id}/>}
+          {user && <Button data-testid="shared-export-pdf" onClick={doExport} className="bg-[#5A67D8] hover:bg-[#4C51BF] rounded-sm h-9"><FileDown className="w-4 h-4 mr-2"/><span className="font-mono text-xs uppercase tracking-wider">Export PDF</span></Button>}
           {!user && <Button data-testid="shared-signin" onClick={doLogin} className="bg-[#5A67D8] rounded-sm">Sign in to comment</Button>}
         </div>
       </header>
@@ -180,6 +197,16 @@ export default function SharedReview() {
       </main>
       <Footer/>
       <AdLockModal open={adOpen} onClose={() => setAdOpen(false)} onComplete={() => setAdOpen(false)} durationSec={15}/>
+      {exportState.open && (
+        <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur flex items-center justify-center px-6" data-testid="pdf-export-modal">
+          <div className="w-full max-w-sm border border-[#232326] bg-[#121214] rounded-sm p-6 text-center">
+            <Loader2 className="w-8 h-8 text-[#5A67D8] animate-spin mx-auto"/>
+            <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#5A67D8] mt-4">Compiling review PDF</p>
+            <p className="text-lg font-semibold mt-1" data-testid="pdf-export-progress">Capturing frame {exportState.current} of {exportState.total}</p>
+            <div className="w-full h-1.5 bg-[#232326] rounded-sm mt-4 overflow-hidden"><div className="h-full bg-[#5A67D8] transition-all duration-200" style={{ width: `${exportState.total ? (exportState.current / exportState.total) * 100 : 0}%` }}/></div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

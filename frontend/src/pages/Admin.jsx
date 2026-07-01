@@ -34,11 +34,11 @@ export default function Admin() {
   const setOffer = (id, key, value) => setPlanConfig(c => ({ ...c, [id]: { ...c[id], offer: { ...(c[id]?.offer || {}), [key]: value } } }));
 
   const [coupons, setCoupons] = useState([]);
-  const [newCoupon, setNewCoupon] = useState({ code: "", percent: 20, expires_at: "", new_users_only: true });
+  const [newCoupon, setNewCoupon] = useState({ code: "", percent: 20, expires_at: "", new_users_only: true, description: "" });
   const addCoupon = async () => {
     if (!newCoupon.code) return toast.error("Enter a coupon code");
     await api.post("/admin/coupons", { ...newCoupon, plans: [] });
-    setNewCoupon({ code: "", percent: 20, expires_at: "", new_users_only: true }); loadCoupons(); toast.success("Coupon created");
+    setNewCoupon({ code: "", percent: 20, expires_at: "", new_users_only: true, description: "" }); loadCoupons(); toast.success("Coupon created");
   };
   const delCoupon = async (code) => { await api.delete(`/admin/coupons/${code}`); loadCoupons(); };
   const loadCoupons = async () => { const r = await api.get("/admin/coupons"); setCoupons(r.data); };
@@ -161,6 +161,7 @@ export default function Admin() {
                 <div><label className="font-mono text-[9px] uppercase tracking-wider text-[#8A8A93]">Percent %</label><Input type="number" data-testid="coupon-percent" value={newCoupon.percent} onChange={e=>setNewCoupon({...newCoupon, percent:parseInt(e.target.value)||0})} className="bg-[#0A0A0B] border-[#232326] mt-1"/></div>
                 <div><label className="font-mono text-[9px] uppercase tracking-wider text-[#8A8A93]">Expires</label><Input type="date" data-testid="coupon-expiry" value={newCoupon.expires_at} onChange={e=>setNewCoupon({...newCoupon, expires_at:e.target.value})} className="bg-[#0A0A0B] border-[#232326] mt-1"/></div>
                 <Button onClick={addCoupon} data-testid="create-coupon" className="bg-[#5A67D8] hover:bg-[#4C51BF] rounded-sm">Create</Button>
+                <div className="sm:col-span-4"><label className="font-mono text-[9px] uppercase tracking-wider text-[#8A8A93]">Description (shown to users)</label><Input data-testid="coupon-description" value={newCoupon.description} onChange={e=>setNewCoupon({...newCoupon, description:e.target.value})} placeholder="Launch offer — 20% off your first plan" className="bg-[#0A0A0B] border-[#232326] mt-1"/></div>
                 <label className="flex items-center gap-1.5 cursor-pointer sm:col-span-4"><input type="checkbox" data-testid="coupon-newusers" checked={newCoupon.new_users_only} onChange={e=>setNewCoupon({...newCoupon, new_users_only:e.target.checked})}/><span className="font-mono text-[10px] text-[#8A8A93]">New users only · single-use per user</span></label>
               </div>
               <div className="border border-[#232326] rounded-sm overflow-hidden">

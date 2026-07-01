@@ -341,7 +341,7 @@ async def presence_heartbeat(review_id: str, request: Request):
         {"review_id": review_id, "user_id": user["user_id"]},
         {"$set": {
             "review_id": review_id, "user_id": user["user_id"],
-            "name": user["name"], "picture": user.get("picture"),
+            "name": user["name"], "picture": user.get("picture"), "email": user["email"],
             "is_owner": user["user_id"] == r["owner_id"],
             "last_seen": now_iso(),
         }},
@@ -570,11 +570,35 @@ async def create_coupon(request: Request):
         "code": code, "percent": int(b.get("percent") or 0),
         "plans": b.get("plans") or [],  # [] = any plan
         "new_users_only": bool(b.get("new_users_only")),
+        "description": (b.get("description") or "").strip(),
         "expires_at": b.get("expires_at") or None,
         "active": True, "created_at": now_iso(),
     }
     await db.coupons.update_one({"code": code}, {"$set": doc}, upsert=True)
     return {"ok": True, "coupon": doc}
+
+@api_router.get("/coupons/active")
+async def active_coupons(request: Request):
+    user = await get_current_user(request)
+    today = datetime.now(timezone.utc).date()
+    rows = await db.coupons.find({"active": True}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    out = []
+    for c in rows:
+        exp = c.get("expires_at")
+        if exp:
+            try:
+                if datetime.fromisoformat(exp).date() < today:
+                    continue
+            except Exception:
+                pass
+        if c.get("new_users_only") and user.get("plan") != "free":
+            continue
+        used = await db.coupon_redemptions.find_one({"code": c["code"], "user_id": user["user_id"]})
+        if used:
+            continue
+        out.append({"code": c["code"], "percent": c["percent"], "description": c.get("description", ""),
+                    "expires_at": c.get("expires_at"), "new_users_only": c.get("new_users_only", False)})
+    return out
 
 @api_router.delete("/admin/coupons/{code}")
 async def delete_coupon(code: str, request: Request):

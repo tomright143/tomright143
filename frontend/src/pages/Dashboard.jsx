@@ -29,11 +29,12 @@ export default function Dashboard() {
   const { user, refresh } = useAuth();
 
   const [payments, setPayments] = useState([]);
+  const [coupons, setCoupons] = useState([]);
 
   const fetchAll = async () => {
     try {
-      const [r, s, pm] = await Promise.all([api.get("/reviews"), api.get("/me/stats"), api.get("/billing/payments")]);
-      setReviews(r.data); setStats(s.data); setPayments(pm.data);
+      const [r, s, pm, cp] = await Promise.all([api.get("/reviews"), api.get("/me/stats"), api.get("/billing/payments"), api.get("/coupons/active")]);
+      setReviews(r.data); setStats(s.data); setPayments(pm.data); setCoupons(cp.data);
     } catch { toast.error("Could not load"); }
     finally { setLoading(false); }
   };
@@ -127,6 +128,24 @@ export default function Dashboard() {
             </DialogContent>
           </Dialog>
         </div>
+
+        {coupons.length > 0 && (
+          <div className="mb-6" data-testid="available-offers">
+            <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#F59E0B] mb-2">Available offers</p>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {coupons.map(c => (
+                <div key={c.code} data-testid={`offer-${c.code}`} className="border border-[#F59E0B]/40 bg-[#1a1508] rounded-sm p-3 flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2"><span className="font-mono text-sm font-semibold text-[#F59E0B]">{c.code}</span><span className="text-[10px] font-mono px-1.5 py-0.5 rounded-sm bg-[#F59E0B] text-black">{c.percent}% OFF</span></div>
+                    {c.description && <p className="text-xs text-[#8A8A93] mt-1">{c.description}</p>}
+                    <p className="font-mono text-[9px] text-[#5C5C66] mt-1">{c.expires_at ? `Valid till ${c.expires_at}` : "No expiry"}{c.new_users_only ? " · new users" : ""}</p>
+                  </div>
+                  <button data-testid={`copy-offer-${c.code}`} onClick={() => { navigator.clipboard.writeText(c.code); toast.success(`Copied ${c.code}`); }} className="shrink-0 font-mono text-[9px] uppercase tracking-wider px-2 h-7 border border-[#F59E0B]/50 text-[#F59E0B] rounded-sm hover:bg-[#F59E0B] hover:text-black">Copy</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Subscription card — show whenever paid plan */}
         {user?.plan && user.plan !== "free" && (

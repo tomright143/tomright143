@@ -49,6 +49,19 @@ Production-ready, mobile-responsive cross-platform web app called **"Zero-Storag
 ## Test Status (updated)
 - iteration_2.json — backend 100% / frontend 100%. Recurring cancel-plan bug CONFIRMED FIXED. No critical/minor issues.
 
+## Implemented in Iteration 3 — Collaboration + White-label + CMS (Jun 2026)
+- **Shared-review UI parity**: SharedReview now mirrors the creator Workspace (wide two-panel, bigger video, P2P panel + comment sidebar, mobile sheet). Larger Worxpher logo (~2.5x) across Login/TopNav/Shared/Footer.
+- **Live online presence**: `PresenceBar` (HTTP heartbeat every 5s → `/reviews/{id}/heartbeat` + `/reviews/{id}/presence`, 15s window, opportunistic stale cleanup) shows "N viewing" + green-dot avatars on Workspace & Shared.
+- **Real-time refresh**: comments (CommentSidebar) and annotation pointers (Workspace/Shared) poll every 4s so collaborators' notes/pointers appear live.
+- **Google Drive removed** everywhere (parse/embed/create form/backend). 
+- **Local-file live broadcast** (`LocalVideo.jsx` + `/api/ws/broadcast/{id}`): owner picks a local video → plays + `captureStream()` → WebRTC-broadcasts live to reviewers while tab is open (zero upload); broadcaster relays playback time so viewers' annotations stay in sync. New `video_type='local'`.
+- **Real WebRTC calling** (`P2PCallPanel` rewrite): persistent signaling connection; lists online users; click Call → targeted invite → callee gets WebAudio **ringtone** + Accept/Reject modal; audio+video mesh.
+- **White-label (Studio/Business)**: custom logo (existing) + accent color + website & Instagram links shown in TopNav; edited in Settings; gated server-side in `/settings/profile`.
+- **Admin CMS** (`/content` public GET, `/admin/content` POST): edit landing headline/tagline/footer text + pricing plan names/perks via new Admin "Content" tab; consumed by Login, Footer, Pricing.
+
+## Test Status (updated)
+- iteration_3.json — backend 8/8 / frontend 100%. No bugs. NOTE: live WebRTC media (local broadcast + P2P calling) verified at DOM/endpoint/signaling level only; **actual media streaming needs manual 2-browser validation**.
+
 ## Deferred / Backlog (P1)
 - Real Razorpay live keys (orders + webhook)
 - Self-serve ad upload & scheduling for premium business users

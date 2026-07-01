@@ -337,6 +337,9 @@ async def presence_heartbeat(review_id: str, request: Request):
 async def presence_list(review_id: str, request: Request):
     await get_current_user(request)
     cutoff = (datetime.now(timezone.utc) - timedelta(seconds=15)).isoformat()
+    # opportunistic cleanup of stale rows to keep the collection bounded
+    stale = (datetime.now(timezone.utc) - timedelta(seconds=120)).isoformat()
+    await db.presence.delete_many({"last_seen": {"$lt": stale}})
     rows = await db.presence.find({"review_id": review_id, "last_seen": {"$gte": cutoff}}, {"_id": 0}).to_list(200)
     return {"count": len(rows), "users": rows}
 

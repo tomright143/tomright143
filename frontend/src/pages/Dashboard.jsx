@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Plus, Play, Trash2, Clock, Star, Share2, Users, Folder, TrendingUp, Award, Edit, AlertTriangle, X as XIcon } from "lucide-react";
 import { toast } from "sonner";
 import { parseVideoUrl } from "@/lib/videoUtils";
+import { setLocalFile } from "@/lib/localFileStore";
 import { useAuth } from "@/contexts/AuthContext";
 
 export default function Dashboard() {
@@ -23,6 +24,7 @@ export default function Dashboard() {
   const [url, setUrl] = useState("");
   const [allowDownload, setAllowDownload] = useState(true);
   const [sourceLocal, setSourceLocal] = useState(false);
+  const [localFile, setLocalFileState] = useState(null);
   const navigate = useNavigate();
   const { user, refresh } = useAuth();
 
@@ -41,7 +43,8 @@ export default function Dashboard() {
     if (!title) return toast.error("Title required");
     let payload;
     if (sourceLocal) {
-      payload = { title, video_url: `local://${title}`, video_type: "local", allow_download: allowDownload };
+      if (!localFile) return toast.error("Please locate a video file");
+      payload = { title, video_url: `local://${localFile.name}`, video_type: "local", allow_download: allowDownload };
     } else {
       if (!url) return toast.error("Title and URL required");
       const parsed = parseVideoUrl(url);
@@ -50,7 +53,8 @@ export default function Dashboard() {
     }
     try {
       const r = await api.post("/reviews", payload);
-      setOpen(false); setTitle(""); setUrl(""); setAllowDownload(false); setSourceLocal(false);
+      if (sourceLocal && localFile) setLocalFile(r.data.id, localFile);
+      setOpen(false); setTitle(""); setUrl(""); setAllowDownload(false); setSourceLocal(false); setLocalFileState(null);
       navigate(`/workspace/${r.data.id}`);
     } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
   };
@@ -108,7 +112,14 @@ export default function Dashboard() {
                 {!sourceLocal ? (
                   <div className="space-y-1.5"><Label className="font-mono text-[10px] uppercase tracking-[0.15em] text-[#8A8A93]">Stream URL</Label><Input data-testid="new-review-url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://youtube.com/watch?v=..." className="bg-[#0A0A0B] border-[#232326] rounded-sm font-mono text-xs"/><p className="text-[10px] font-mono text-[#5C5C66] mt-1">Supported: YouTube & Vimeo links.</p></div>
                 ) : (
-                  <p className="text-[10px] font-mono text-[#5C5C66]">You'll pick the video file inside the workspace. It streams live from your computer to reviewers while your tab is open — nothing is uploaded.</p>
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 px-3 py-3 border border-dashed border-[#5A67D8] rounded-sm cursor-pointer hover:bg-[#5A67D8]/10" data-testid="local-file-input-label">
+                      <Folder className="w-4 h-4 text-[#5A67D8]"/>
+                      <span className="font-mono text-[10px] uppercase tracking-wider text-[#EDEDF0]">{localFile ? localFile.name : "Locate video file…"}</span>
+                      <input data-testid="local-file-input" type="file" accept="video/*" className="hidden" onChange={(e) => setLocalFileState(e.target.files?.[0] || null)}/>
+                    </label>
+                    <p className="text-[10px] font-mono text-[#5C5C66]">Streams live from your computer to reviewers while your tab is open — nothing is uploaded.</p>
+                  </div>
                 )}
                 <div className="flex items-center justify-between pt-2 border-t border-[#232326]"><div><Label className="font-mono text-[10px] uppercase tracking-[0.15em] text-[#8A8A93]">Allow download</Label></div><Switch checked={allowDownload} onCheckedChange={setAllowDownload}/></div>
               </div>

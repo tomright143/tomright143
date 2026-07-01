@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Upload, Radio, Loader2 } from "lucide-react";
+import { getLocalFile, clearLocalFile } from "@/lib/localFileStore";
 
 const ICE = {
   iceServers: [
@@ -44,12 +45,24 @@ export default function LocalVideo({ reviewId, currentUser, isOwner, onTime, onD
 
   const pickFile = (e) => {
     const file = e.target.files?.[0]; if (!file) return;
+    loadFile(file);
+  };
+
+  const loadFile = (file) => {
     const url = URL.createObjectURL(file);
     const v = videoRef.current;
     v.src = url;
     v.play().catch(() => {});
     setFileChosen(true);
   };
+
+  // Auto-load a file that was picked in the Create dialog (owner only)
+  useEffect(() => {
+    if (!isOwner || fileChosen) return;
+    const f = getLocalFile(reviewId);
+    if (f && videoRef.current) { loadFile(f); clearLocalFile(reviewId); }
+    // eslint-disable-next-line
+  }, [isOwner, reviewId]);
 
   const startBroadcast = () => {
     const v = videoRef.current;

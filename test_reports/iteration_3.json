@@ -1,0 +1,28 @@
+{
+  "summary": "Iteration 3 - Worxpher new feature verification (CMS content, local video, presence, WebRTC UI, white-label branding). Backend pytest: 8/8 PASSED. Frontend: All new UI verified visually. GET /api/content public returns landing_headline/tagline/footer_text/plans. POST /api/admin/content admin-only (403 for non-admin) and GET /api/content reflects update. POST /api/reviews with video_type='local' creates review with video_id starting 'local_'; Google Drive URL returns 400; YouTube+Vimeo still work. Heartbeat + presence: user appears in /presence within 15s window (count>=1 verified). /settings/profile brand fields (website, instagram, brand_accent, brand_logo) persist for STUDIO plan and are correctly ignored for FREE (non-branded fields like company still persist). Frontend Login page renders CMS-driven landing-headline + landing-tagline + big Worxpher logo. Dashboard 'New review' dialog shows source-url/source-local toggle; picking source-local hides new-review-url input and creating navigates to /workspace/{id}; no Google Drive text in dialog. Workspace with LOCAL review: presence-bar visible ('1 VIEWING'), local-file-picker + local-controls-note visible, ctrl-play/scrubber-container (youtube-only) correctly HIDDEN, annotation toolbar still present. Admin has admin-tab-content tab with content-headline/content-tagline/content-footer inputs + 4 per-plan content-plan-name-{id} & content-plan-perks-{id} + save-content works (toast 'Site content updated' + backend accepts POST). Settings white-label: Studio has enabled brand-website-input/brand-instagram-input/brand-accent-input/save-brand; after save, TopNav renders brand-website + brand-instagram icons; FREE user has these inputs disabled + save-brand disabled. SharedReview page (authenticated non-owner) uses wide two-panel layout: shared-video-stage + comment sidebar + p2p-panel + presence-bar; empty p2p state shows 'No one else is online right now.' Unauthenticated shared page still shows shared-auth-gate + shared-auth-login. WebRTC live media (broadcast + call) not verifiable end-to-end in single-session automation - UI/DOM/signaling endpoints all present.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration3_features.py",
+    "/app/backend/tests/test_fork_features.py",
+    "/app/test_reports/pytest/iteration3_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py line 493 DEFAULT_CONTENT.plans={} — if admin never saves plan copy, /api/content returns empty plans and frontend Pricing must fall back to hardcoded plan copy. Verify frontend does; if not, seed DEFAULT_CONTENT.plans with the actual defaults so /api/content is a complete source of truth.",
+    "server.py /settings/profile silently drops brand fields for non-Studio users - no 400/warning returned. Consider surfacing a message so paid features are discoverable (currently the UI already disables the inputs, but a rogue API caller gets a silent 200).",
+    "server.py extract_video_info still accepts client-provided video_type for non-local paths but re-derives from URL, so client field is dead. Was flagged iter 2, still present. Cosmetic only.",
+    "server.py /reviews/{id}/heartbeat auth relies on review existence + get_current_user only; does not check that the user is the owner OR share-token authorized. Anyone signed in who knows a review id can appear in that review's presence list. If presence is meant to only reflect legitimate viewers, gate this behind /shared token or owner check.",
+    "Frontend PresenceBar polls every 4s and heartbeats on the same review id — the /reviews/{id}/presence endpoint has NO cap on stale rows; the presence collection will grow unbounded unless a TTL index or periodic cleanup runs. Recommend a Mongo TTL index on presence.last_seen (e.g., expireAfterSeconds: 300)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration3_features.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Injected via mongosh: admin session_token=it3_admin_tok (tom@blackfx.net), studio it3_studio_tok, free it3_free_tok - all cleaned up after run.",
+  "seed_data_creation": "1 admin + 1 studio + 1 free user + one TEST_local_review via UI (cleaned up).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All Iteration 3 features verified. WebRTC live media flow (LocalVideo owner broadcast, P2P call ringtone/accept/reject) requires 2 real browser contexts and could NOT be functionally validated with a single automation session — only DOM/empty-state was checked. If future iterations tweak these, seed two authenticated Playwright contexts and drive one as owner and one as viewer to observe the online list populate + call state transitions.",
+  "rca of the issue": "N/A - no bugs found this iteration."
+}

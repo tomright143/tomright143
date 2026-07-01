@@ -1,7 +1,7 @@
 import React from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import { LogOut, User as UserIcon, CreditCard } from "lucide-react";
+import { LogOut, User as UserIcon, CreditCard, Globe, Instagram } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -13,16 +13,18 @@ export default function TopNav() {
   const handleLogout = async () => { await logout(); navigate("/login"); };
 
   return (
-    <header className="border-b border-[#232326] bg-[#0A0A0B]/80 backdrop-blur sticky top-0 z-30">
-      <div className="max-w-[1400px] mx-auto px-4 sm:px-8 h-14 flex items-center justify-between">
+    <header className="border-b border-[#232326] bg-[#0A0A0B]/80 backdrop-blur sticky top-0 z-30" style={user?.brand_accent ? { borderTopColor: user.brand_accent, borderTopWidth: 3 } : undefined}>
+      <div className="max-w-[1400px] mx-auto px-4 sm:px-8 h-20 flex items-center justify-between">
         <Link to="/dashboard" className="flex items-center gap-2" data-testid="brand-link">
           {user?.brand_logo ? (
-            <img src={user.brand_logo} alt="brand" className="h-6"/>
+            <img src={user.brand_logo} alt="brand" className="h-14"/>
           ) : (
-            <img src="/worxpher-logo.png" alt="Worxpher" className="h-7"/>
+            <img src="/worxpher-logo.png" alt="Worxpher" className="h-14"/>
           )}
         </Link>
         <nav className="flex items-center gap-2">
+          {user?.website && <a href={user.website} target="_blank" rel="noreferrer" data-testid="brand-website" title="Website" className="hidden sm:flex w-9 h-9 rounded-sm border border-[#232326] hover:bg-[#121214] items-center justify-center text-[#8A8A93] hover:text-white"><Globe className="w-4 h-4"/></a>}
+          {user?.instagram && <a href={user.instagram} target="_blank" rel="noreferrer" data-testid="brand-instagram" title="Instagram" className="hidden sm:flex w-9 h-9 rounded-sm border border-[#232326] hover:bg-[#121214] items-center justify-center text-[#8A8A93] hover:text-white"><Instagram className="w-4 h-4"/></a>}
           {user?.is_admin && (
             <Link to="/admin" className="hidden sm:inline-block">
               <Button variant="ghost" className="text-[#5A67D8] hover:text-white hover:bg-[#121214] h-9 rounded-sm" data-testid="nav-admin">

@@ -31,8 +31,15 @@ export default function Pricing() {
   const [selected, setSelected] = useState(null);
   const [txn, setTxn] = useState("");
   const [gst, setGst] = useState(user?.gst_no || "");
+  const [content, setContent] = useState(null);
 
   useEffect(() => { api.get("/billing/upi-info").then(r => setUpi(r.data)); }, []);
+  useEffect(() => { api.get("/content").then(r => setContent(r.data)).catch(() => {}); }, []);
+
+  const plans = PLANS.map(p => {
+    const ov = content?.plans?.[p.id];
+    return ov ? { ...p, name: ov.name || p.name, perks: (ov.perks && ov.perks.length ? ov.perks : p.perks) } : p;
+  });
 
   const request = async (plan) => {
     if (plan === "free") return;
@@ -67,7 +74,7 @@ export default function Pricing() {
           <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight mt-2">Plans for studios.</h1>
         </div>
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {PLANS.map(p => {
+          {plans.map(p => {
             const base = (p.price / 1.18).toFixed(2); const gstAmt = (p.price - base).toFixed(2);
             const isCurrent = user?.plan === p.id;
             const isSel = selected === p.id;

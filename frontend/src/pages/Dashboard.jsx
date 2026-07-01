@@ -22,6 +22,7 @@ export default function Dashboard() {
   const [title, setTitle] = useState("");
   const [url, setUrl] = useState("");
   const [allowDownload, setAllowDownload] = useState(true);
+  const [sourceLocal, setSourceLocal] = useState(false);
   const navigate = useNavigate();
   const { user, refresh } = useAuth();
 
@@ -37,12 +38,19 @@ export default function Dashboard() {
   useEffect(() => { fetchAll(); }, []);
 
   const create = async () => {
-    if (!title || !url) return toast.error("Title and URL required");
-    const parsed = parseVideoUrl(url);
-    if (!parsed) return toast.error("URL must be YouTube, Vimeo or Drive");
+    if (!title) return toast.error("Title required");
+    let payload;
+    if (sourceLocal) {
+      payload = { title, video_url: `local://${title}`, video_type: "local", allow_download: allowDownload };
+    } else {
+      if (!url) return toast.error("Title and URL required");
+      const parsed = parseVideoUrl(url);
+      if (!parsed) return toast.error("URL must be YouTube or Vimeo");
+      payload = { title, video_url: url, video_type: parsed.type, allow_download: allowDownload };
+    }
     try {
-      const r = await api.post("/reviews", { title, video_url: url, video_type: parsed.type, allow_download: allowDownload });
-      setOpen(false); setTitle(""); setUrl(""); setAllowDownload(false);
+      const r = await api.post("/reviews", payload);
+      setOpen(false); setTitle(""); setUrl(""); setAllowDownload(false); setSourceLocal(false);
       navigate(`/workspace/${r.data.id}`);
     } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
   };
@@ -93,7 +101,15 @@ export default function Dashboard() {
               <DialogHeader><DialogTitle className="font-mono uppercase tracking-wider text-sm">Create review</DialogTitle></DialogHeader>
               <div className="space-y-4 py-2">
                 <div className="space-y-1.5"><Label className="font-mono text-[10px] uppercase tracking-[0.15em] text-[#8A8A93]">Title</Label><Input data-testid="new-review-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Q4 brand cut v3" className="bg-[#0A0A0B] border-[#232326] rounded-sm"/></div>
-                <div className="space-y-1.5"><Label className="font-mono text-[10px] uppercase tracking-[0.15em] text-[#8A8A93]">Stream URL</Label><Input data-testid="new-review-url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://youtube.com/watch?v=..." className="bg-[#0A0A0B] border-[#232326] rounded-sm font-mono text-xs"/><p className="text-[10px] font-mono text-[#5C5C66] mt-1">Google Drive: set sharing to "Anyone with link" first. Paste the full /file/d/&lt;ID&gt;/view URL.</p></div>
+                <div className="flex gap-2">
+                  <button type="button" data-testid="source-url" onClick={() => setSourceLocal(false)} className={`flex-1 h-9 rounded-sm border font-mono text-[10px] uppercase tracking-wider ${!sourceLocal ? "border-[#5A67D8] text-white bg-[#5A67D8]/10" : "border-[#232326] text-[#8A8A93]"}`}>Stream URL</button>
+                  <button type="button" data-testid="source-local" onClick={() => setSourceLocal(true)} className={`flex-1 h-9 rounded-sm border font-mono text-[10px] uppercase tracking-wider ${sourceLocal ? "border-[#5A67D8] text-white bg-[#5A67D8]/10" : "border-[#232326] text-[#8A8A93]"}`}>Local file · live</button>
+                </div>
+                {!sourceLocal ? (
+                  <div className="space-y-1.5"><Label className="font-mono text-[10px] uppercase tracking-[0.15em] text-[#8A8A93]">Stream URL</Label><Input data-testid="new-review-url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://youtube.com/watch?v=..." className="bg-[#0A0A0B] border-[#232326] rounded-sm font-mono text-xs"/><p className="text-[10px] font-mono text-[#5C5C66] mt-1">Supported: YouTube & Vimeo links.</p></div>
+                ) : (
+                  <p className="text-[10px] font-mono text-[#5C5C66]">You'll pick the video file inside the workspace. It streams live from your computer to reviewers while your tab is open — nothing is uploaded.</p>
+                )}
                 <div className="flex items-center justify-between pt-2 border-t border-[#232326]"><div><Label className="font-mono text-[10px] uppercase tracking-[0.15em] text-[#8A8A93]">Allow download</Label></div><Switch checked={allowDownload} onCheckedChange={setAllowDownload}/></div>
               </div>
               <DialogFooter><Button onClick={create} data-testid="create-review-submit" className="bg-[#5A67D8] hover:bg-[#4C51BF] rounded-sm">Create</Button></DialogFooter>

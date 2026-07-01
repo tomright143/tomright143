@@ -23,13 +23,18 @@ export default function Admin() {
   const [prices, setPrices] = useState({ creator: 299, studio: 799, business: 1499 });
   const savePrices = async () => { await api.post("/admin/plans", prices); toast.success("Plan prices updated"); };
 
+  const [content, setContent] = useState({ landing_headline: "", landing_tagline: "", footer_text: "", plans: {} });
+  const saveContent = async () => { await api.post("/admin/content", content); toast.success("Site content updated"); };
+  const setPlanField = (id, field, value) => setContent(c => ({ ...c, plans: { ...c.plans, [id]: { ...(c.plans?.[id] || {}), [field]: value } } }));
+
   const load = async () => {
-    const [s, u, p, a, ad, pl] = await Promise.all([
+    const [s, u, p, a, ad, pl, ct] = await Promise.all([
       api.get("/admin/stats"), api.get("/admin/users"), api.get("/admin/payments"),
-      api.get("/admin/admins"), api.get("/admin/ads"), api.get("/billing/plans"),
+      api.get("/admin/admins"), api.get("/admin/ads"), api.get("/billing/plans"), api.get("/content"),
     ]);
     setStats(s.data); setUsers(u.data); setPayments(p.data); setAdmins(a.data); setAds(ad.data);
     setPrices(pl.data.prices);
+    setContent({ landing_headline: ct.data.landing_headline || "", landing_tagline: ct.data.landing_tagline || "", footer_text: ct.data.footer_text || "", plans: ct.data.plans || {} });
   };
   useEffect(() => { if (user?.is_admin) load(); }, [user]);
 
@@ -53,7 +58,7 @@ export default function Admin() {
     } catch { toast.error("Reset failed"); }
   };
 
-  const TABS = [["stats","Overview"],["pricing","Pricing"],["payments","Payments"],["ads","Ads"],["admins","Admins"],["users","Users"]];
+  const TABS = [["stats","Overview"],["content","Content"],["pricing","Pricing"],["payments","Payments"],["ads","Ads"],["admins","Admins"],["users","Users"]];
 
   return (
     <div className="min-h-screen bg-[#0A0A0B] text-[#EDEDF0]">
@@ -73,6 +78,26 @@ export default function Admin() {
                 <div key={l} className="border border-[#232326] rounded-sm bg-[#121214] p-4"><div className="text-2xl font-semibold">{v}</div><div className="font-mono text-[10px] uppercase tracking-wider text-[#8A8A93] mt-1">{l}</div></div>
               ))}
               <div className="border border-[#232326] rounded-sm bg-[#121214] p-4 col-span-2 md:col-span-4"><p className="font-mono text-[10px] uppercase text-[#8A8A93] mb-2">By plan</p><div className="flex gap-4 flex-wrap text-sm">{Object.entries(stats.by_plan).map(([k,v]) => <span key={k}><b className="text-[#5A67D8]">{v}</b> {k}</span>)}</div></div>
+            </div>
+          )}
+          {tab === "content" && (
+            <div className="space-y-4 max-w-2xl" data-testid="admin-content">
+              <div className="border border-[#232326] rounded-sm bg-[#121214] p-5 space-y-3">
+                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#8A8A93]">Landing / login copy</p>
+                <div><label className="font-mono text-[10px] uppercase tracking-wider text-[#8A8A93]">Headline</label><Input data-testid="content-headline" value={content.landing_headline} onChange={e=>setContent({...content, landing_headline:e.target.value})} className="bg-[#0A0A0B] border-[#232326] mt-1"/></div>
+                <div><label className="font-mono text-[10px] uppercase tracking-wider text-[#8A8A93]">Tagline</label><textarea data-testid="content-tagline" value={content.landing_tagline} onChange={e=>setContent({...content, landing_tagline:e.target.value})} rows={3} className="w-full bg-[#0A0A0B] border border-[#232326] rounded-sm mt-1 p-2 text-sm"/></div>
+                <div><label className="font-mono text-[10px] uppercase tracking-wider text-[#8A8A93]">Footer text</label><Input data-testid="content-footer" value={content.footer_text} onChange={e=>setContent({...content, footer_text:e.target.value})} className="bg-[#0A0A0B] border-[#232326] mt-1"/></div>
+              </div>
+              <div className="border border-[#232326] rounded-sm bg-[#121214] p-5 space-y-4">
+                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#8A8A93]">Pricing plan copy (leave blank to use defaults)</p>
+                {["free","creator","studio","business"].map(id => (
+                  <div key={id} className="grid sm:grid-cols-2 gap-2 pb-3 border-b border-[#232326] last:border-0">
+                    <div><label className="font-mono text-[10px] uppercase tracking-wider text-[#5A67D8]">{id} · name</label><Input data-testid={`content-plan-name-${id}`} value={content.plans?.[id]?.name || ""} onChange={e=>setPlanField(id,"name",e.target.value)} className="bg-[#0A0A0B] border-[#232326] mt-1"/></div>
+                    <div><label className="font-mono text-[10px] uppercase tracking-wider text-[#8A8A93]">perks (one per line)</label><textarea data-testid={`content-plan-perks-${id}`} value={(content.plans?.[id]?.perks || []).join("\n")} onChange={e=>setPlanField(id,"perks",e.target.value.split("\n").filter(Boolean))} rows={3} className="w-full bg-[#0A0A0B] border border-[#232326] rounded-sm mt-1 p-2 text-xs font-mono"/></div>
+                  </div>
+                ))}
+              </div>
+              <Button onClick={saveContent} data-testid="save-content" className="bg-[#5A67D8] hover:bg-[#4C51BF] rounded-sm">Save content</Button>
             </div>
           )}
           {tab === "pricing" && (

@@ -98,13 +98,6 @@ def extract_video_info(url: str):
     if m: return {"video_type": "youtube", "video_id": m.group(1)}
     m = re.search(r"vimeo\.com/(\d+)", url)
     if m: return {"video_type": "vimeo", "video_id": m.group(1)}
-    m = re.search(r"drive\.google\.com/file/d/([A-Za-z0-9_\-]+)", url)
-    if m: return {"video_type": "gdrive", "video_id": m.group(1)}
-    m = re.search(r"drive\.google\.com/open\?id=([A-Za-z0-9_\-]+)", url)
-    if m: return {"video_type": "gdrive", "video_id": m.group(1)}
-    m = re.search(r"[?&]id=([A-Za-z0-9_\-]{10,})", url)
-    if m and "drive.google" in url:
-        return {"video_type": "gdrive", "video_id": m.group(1)}
     return {"video_type": "unknown", "video_id": url}
 
 # ===== Auth =====
@@ -173,9 +166,12 @@ async def logout(request: Request, response: Response):
 @api_router.post("/reviews")
 async def create_review(payload: ReviewCreate, request: Request):
     user = await get_current_user(request)
-    info = extract_video_info(payload.video_url)
-    if info["video_type"] == "unknown":
-        raise HTTPException(400, "Unsupported URL. Use YouTube, Vimeo, or Google Drive.")
+    if payload.video_type == "local":
+        info = {"video_type": "local", "video_id": f"local_{uuid.uuid4().hex[:8]}"}
+    else:
+        info = extract_video_info(payload.video_url)
+        if info["video_type"] == "unknown":
+            raise HTTPException(400, "Unsupported URL. Use YouTube or Vimeo, or pick a local file for live broadcast.")
     rid = f"rev_{uuid.uuid4().hex[:12]}"
     share_token = f"sh_{uuid.uuid4().hex[:14]}"
     doc = {
@@ -318,6 +314,32 @@ async def list_viewers(review_id: str, request: Request):
         raise HTTPException(403, "Owner only")
     return await db.review_viewers.find({"review_id": review_id}, {"_id": 0}).to_list(200)
 
+# ===== Live presence (heartbeat) =====
+@api_router.post("/reviews/{review_id}/heartbeat")
+async def presence_heartbeat(review_id: str, request: Request):
+    user = await get_current_user(request)
+    r = await db.reviews.find_one({"id": review_id}, {"_id": 0})
+    if not r:
+        raise HTTPException(404, "Not found")
+    await db.presence.update_one(
+        {"review_id": review_id, "user_id": user["user_id"]},
+        {"$set": {
+            "review_id": review_id, "user_id": user["user_id"],
+            "name": user["name"], "picture": user.get("picture"),
+            "is_owner": user["user_id"] == r["owner_id"],
+            "last_seen": now_iso(),
+        }},
+        upsert=True,
+    )
+    return {"ok": True}
+
+@api_router.get("/reviews/{review_id}/presence")
+async def presence_list(review_id: str, request: Request):
+    await get_current_user(request)
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=15)).isoformat()
+    rows = await db.presence.find({"review_id": review_id, "last_seen": {"$gte": cutoff}}, {"_id": 0}).to_list(200)
+    return {"count": len(rows), "users": rows}
+
 # ===== Annotations =====
 @api_router.post("/annotations")
 async def create_annotation(payload: AnnotationCreate, request: Request):
@@ -454,14 +476,49 @@ async def update_profile(request: Request):
     user = await get_current_user(request)
     body = await request.json()
     updates = {}
-    for f in ("gst_no", "company", "brand_logo"):
+    for f in ("gst_no", "company"):
         if f in body:
             updates[f] = body[f]
-    if user["plan"] != "studio" and "brand_logo" in updates:
-        updates.pop("brand_logo")
+    # White-label branding fields require Studio/Business
+    if user["plan"] in ("studio", "business"):
+        for f in ("brand_logo", "brand_accent", "website", "instagram"):
+            if f in body:
+                updates[f] = body[f]
     if updates:
         await db.users.update_one({"user_id": user["user_id"]}, {"$set": updates})
     return {"ok": True}
+
+# ===== Site content (Admin CMS) =====
+DEFAULT_CONTENT = {
+    "landing_headline": "Review video without hosting it.",
+    "landing_tagline": "Stream from YouTube or Vimeo, or broadcast a local file live from your computer. Annotate in real-time with vector tools, thread feedback like Instagram, jump on a P2P call — all in one workspace.",
+    "footer_text": "Worxpher",
+    "plans": {},
+}
+
+@api_router.get("/content")
+async def get_content():
+    doc = await db.config.find_one({"key": "site_content"}, {"_id": 0})
+    c = dict(DEFAULT_CONTENT)
+    if doc and doc.get("value"):
+        c.update(doc["value"])
+    return c
+
+@api_router.post("/admin/content")
+async def set_content(request: Request):
+    await require_admin(request)
+    body = await request.json()
+    allowed = {}
+    for k in ("landing_headline", "landing_tagline", "footer_text"):
+        if k in body and isinstance(body[k], str):
+            allowed[k] = body[k]
+    if "plans" in body and isinstance(body["plans"], dict):
+        allowed["plans"] = body["plans"]
+    existing = await db.config.find_one({"key": "site_content"}, {"_id": 0})
+    merged = dict(existing.get("value") if existing else {})
+    merged.update(allowed)
+    await db.config.update_one({"key": "site_content"}, {"$set": {"key": "site_content", "value": merged}}, upsert=True)
+    return {"ok": True, "content": merged}
 
 # ===== Dashboard analytics =====
 @api_router.get("/me/stats")
@@ -645,6 +702,7 @@ class SignalHub:
             except Exception: pass
 
 hub = SignalHub()
+bcast_hub = SignalHub()
 
 @app.websocket("/api/ws/{review_id}")
 async def ws_signal(ws: WebSocket, review_id: str, peer: str):
@@ -661,6 +719,24 @@ async def ws_signal(ws: WebSocket, review_id: str, peer: str):
         await hub.broadcast(review_id, peer, {"type": "peer-left", "peer": peer})
     except Exception:
         hub.disconnect(review_id, peer)
+
+@app.websocket("/api/ws/broadcast/{review_id}")
+async def ws_broadcast(ws: WebSocket, review_id: str, peer: str, role: str = "viewer"):
+    await bcast_hub.connect(review_id, peer, ws)
+    # tell everyone what role this peer has so the broadcaster knows to offer
+    await bcast_hub.broadcast(review_id, peer, {"type": "role", "peer": peer, "role": role})
+    try:
+        while True:
+            data = await ws.receive_json()
+            target = data.get("target")
+            data["from"] = peer
+            if target: await bcast_hub.send_to(review_id, target, data)
+            else: await bcast_hub.broadcast(review_id, peer, data)
+    except WebSocketDisconnect:
+        bcast_hub.disconnect(review_id, peer)
+        await bcast_hub.broadcast(review_id, peer, {"type": "peer-left", "peer": peer})
+    except Exception:
+        bcast_hub.disconnect(review_id, peer)
 
 @api_router.get("/")
 async def root():

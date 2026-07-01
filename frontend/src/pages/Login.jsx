@@ -1,9 +1,12 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Layers, Lock, Sparkles } from "lucide-react";
+import api from "@/lib/api";
 
 // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
 export default function Login() {
+  const [content, setContent] = useState({ landing_headline: "Review video without hosting it.", landing_tagline: "Stream from YouTube or Vimeo, or broadcast a local file live. Annotate in real-time, thread feedback like Instagram, jump on a P2P call — all in one workspace." });
+  useEffect(() => { api.get("/content").then(r => setContent(r.data)).catch(() => {}); }, []);
   const handleLogin = () => {
     if (typeof window !== "undefined" && window.localStorage) {
       // remember intent — emergent OAuth will pick best account
@@ -18,15 +21,15 @@ export default function Login() {
       {/* Left: Brand panel */}
       <div className="hidden lg:flex relative flex-col justify-between p-12 border-r border-[#232326] bg-grid overflow-hidden">
         <div className="flex items-center gap-2">
-          <img src="/worxpher-logo.png" alt="Worxpher" className="h-8"/>
+          <img src="/worxpher-logo.png" alt="Worxpher" className="h-20"/>
         </div>
         <div className="space-y-6 max-w-md rise">
           <p className="font-mono text-xs uppercase tracking-[0.2em] text-[#5C5C66]">Frame-Accurate · Zero-Storage · Collaborative</p>
-          <h1 className="text-5xl font-semibold tracking-tight leading-[1.05]">
-            Review video<br/>without hosting it.
+          <h1 className="text-5xl font-semibold tracking-tight leading-[1.05]" data-testid="landing-headline">
+            {content.landing_headline}
           </h1>
-          <p className="text-[#8A8A93] leading-relaxed">
-            Stream from YouTube, Vimeo, or Google Drive. Annotate in real-time with vector tools, thread feedback like Instagram, jump on a P2P call — all in one workspace.
+          <p className="text-[#8A8A93] leading-relaxed" data-testid="landing-tagline">
+            {content.landing_tagline}
           </p>
           <div className="flex flex-wrap gap-2 pt-2 font-mono text-xs text-[#8A8A93]">
             <span className="px-2 py-1 border border-[#232326] rounded-sm">Frame stepping 0.05s</span>
@@ -41,7 +44,7 @@ export default function Login() {
       <div className="flex items-center justify-center p-8 sm:p-12">
         <div className="w-full max-w-sm space-y-8 rise">
           <div className="lg:hidden flex items-center gap-2">
-            <img src="/worxpher-logo.png" alt="Worxpher" className="h-8"/>
+            <img src="/worxpher-logo.png" alt="Worxpher" className="h-16"/>
           </div>
           <div>
             <h2 className="text-3xl font-semibold tracking-tight">Sign in</h2>

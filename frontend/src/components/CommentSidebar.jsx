@@ -18,6 +18,10 @@ export default function CommentSidebar({ reviewId, currentTime, onSeek }) {
     setComments(r.data);
   };
   useEffect(() => { refresh(); api.get("/team").then(r => setTeam(r.data)); }, [reviewId]); // eslint-disable-line
+  useEffect(() => {
+    const iv = setInterval(() => { refresh().catch(() => {}); }, 4000);
+    return () => clearInterval(iv);
+  }, [reviewId]); // eslint-disable-line
 
   const handleSend = async () => {
     if (!text.trim()) return;

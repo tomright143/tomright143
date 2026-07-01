@@ -9,6 +9,8 @@ import Watermark from "@/components/Watermark";
 import AdLockModal from "@/components/AdLockModal";
 import CommentSidebar from "@/components/CommentSidebar";
 import P2PCallPanel from "@/components/P2PCallPanel";
+import PresenceBar from "@/components/PresenceBar";
+import LocalVideo from "@/components/LocalVideo";
 import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -61,6 +63,13 @@ export default function Workspace() {
     })();
   }, [id, navigate]);
 
+  // Real-time: refresh annotations periodically so collaborators' pointers appear live
+  useEffect(() => {
+    if (!review) return;
+    const iv = setInterval(() => { api.get(`/annotations/${id}`).then(r => setAnnotations(r.data)).catch(() => {}); }, 4000);
+    return () => clearInterval(iv);
+  }, [id, review]);
+
   useEffect(() => {
     if (!review || review.video_type !== "youtube") return;
     if (window.YT && window.YT.Player) { initYT(); return; }
@@ -100,6 +109,7 @@ export default function Workspace() {
 
   useEffect(() => {
     const onKey = (e) => {
+      if (!review || review.video_type !== "youtube") return;
       if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
       if (e.code === "Space") { e.preventDefault(); togglePlay(); }
       else if (e.code === "ArrowLeft") { e.preventDefault(); step(-0.05); }
@@ -108,7 +118,7 @@ export default function Workspace() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line
-  }, [playing]);
+  }, [playing, review]);
 
   const addAnnotation = async ({ tool, color, brush, points }) => {
     try {
@@ -265,6 +275,9 @@ export default function Workspace() {
   const embed = getEmbedUrl(review.video_type, review.video_id) + (review.video_type === "youtube" ? "&controls=0&disablekb=1&iv_load_policy=3&fs=0" : "");
   const showWatermark = !review.allow_download;
   const progress = duration ? (currentTime / duration) * 100 : 0;
+  const isOwner = user?.user_id === review.owner_id;
+  const isYouTube = review.video_type === "youtube";
+  const isLocal = review.video_type === "local";
 
   return (
     <div className="min-h-screen bg-[#0A0A0B] text-[#EDEDF0]">
@@ -277,6 +290,7 @@ export default function Workspace() {
               <h1 className="text-xl sm:text-2xl font-medium truncate">{review.title}</h1>
             </div>
             <div className="flex items-center gap-2">
+              <PresenceBar reviewId={id}/>
               <span className="font-mono text-xs text-[#5A67D8]" data-testid="current-timecode">{formatTimecode(currentTime)} / {formatTimecode(duration)}</span>
               <Button data-testid="workspace-edit-button" onClick={openEdit} className="bg-[#121214] border border-[#232326] hover:bg-[#1a1a1d] rounded-sm h-9 w-9 p-0"><Edit className="w-4 h-4"/></Button>
               <Button data-testid="workspace-delete-button" onClick={() => setDeleteOpen(true)} className="bg-[#121214] border border-[#232326] hover:bg-[#1a0a0a] hover:border-[#EF4444] text-[#EF4444] rounded-sm h-9 w-9 p-0"><Trash2 className="w-4 h-4"/></Button>
@@ -286,16 +300,19 @@ export default function Workspace() {
           </div>
 
           <div className="relative w-full aspect-video bg-black rounded-sm overflow-hidden border border-[#232326]" data-testid="video-stage">
-            {review.video_type === "youtube" ? (
+            {isYouTube ? (
               <iframe ref={iframeRef} src={embed} title="player" className="absolute inset-0 w-full h-full" allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen/>
+            ) : isLocal ? (
+              <LocalVideo reviewId={id} currentUser={user} isOwner={isOwner} onTime={setCurrentTime} onDuration={setDuration} onPlaying={setPlaying}/>
             ) : (
               <iframe src={embed} title="player" className="absolute inset-0 w-full h-full" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowFullScreen/>
             )}
             {showWatermark && false && <Watermark email={user.email}/>}
-            <AnnotationCanvas annotations={annotations} currentTime={currentTime} tool={tool} color={color} brush={brush} onAdd={addAnnotation} enabled={tool !== "select" && review.video_type === "youtube"}/>
+            <AnnotationCanvas annotations={annotations} currentTime={currentTime} tool={tool} color={color} brush={brush} onAdd={addAnnotation} enabled={tool !== "select" && (isYouTube || isLocal)}/>
           </div>
 
-          {/* Scrubber with comment pins */}
+          {/* Scrubber with comment pins (YouTube only) */}
+          {isYouTube && (
           <div className="mt-3 relative" data-testid="scrubber-container">
             <input type="range" min={0} max={duration || 100} step={0.05} value={currentTime}
               onChange={(e) => seekTo(parseFloat(e.target.value))}
@@ -309,14 +326,19 @@ export default function Workspace() {
                 style={{ left: `calc(${(c.timestamp / duration) * 100}% - 6px)` }}/>
             ))}
           </div>
+          )}
 
           <div className="flex items-center justify-between mt-3 gap-2 flex-wrap">
+            {isYouTube ? (
             <div className="flex items-center gap-1">
               <button onClick={() => step(-0.05)} data-testid="ctrl-prev-frame" className="w-9 h-9 rounded-sm border border-[#232326] hover:bg-[#1a1a1d] flex items-center justify-center"><SkipBack className="w-4 h-4"/></button>
               <button onClick={togglePlay} data-testid="ctrl-play" className="w-9 h-9 rounded-sm bg-[#5A67D8] hover:bg-[#4C51BF] flex items-center justify-center">{playing ? <Pause className="w-4 h-4"/> : <Play className="w-4 h-4"/>}</button>
               <button onClick={() => step(0.05)} data-testid="ctrl-next-frame" className="w-9 h-9 rounded-sm border border-[#232326] hover:bg-[#1a1a1d] flex items-center justify-center"><SkipForward className="w-4 h-4"/></button>
               <button onClick={toggleMute} data-testid="ctrl-mute" className="w-9 h-9 rounded-sm border border-[#232326] hover:bg-[#1a1a1d] flex items-center justify-center ml-1">{muted ? <VolumeX className="w-4 h-4 text-[#EF4444]"/> : <Volume2 className="w-4 h-4"/>}</button>
             </div>
+            ) : isLocal ? (
+              <span className="font-mono text-[10px] uppercase tracking-wider text-[#5C5C66]" data-testid="local-controls-note">{isOwner ? "Use the player controls to play & seek — reviewers watch live" : "Live broadcast — playback controlled by the owner"}</span>
+            ) : <div/>}
             <div className="w-full lg:w-auto">
               <Toolbar tool={tool} setTool={setTool} color={color} setColor={setColor} brush={brush} setBrush={setBrush} onClear={clearMine}/>
             </div>

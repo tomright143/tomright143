@@ -6,10 +6,14 @@ import AnnotationCanvas from "@/components/AnnotationCanvas";
 import Toolbar from "@/components/Toolbar";
 import AdLockModal from "@/components/AdLockModal";
 import CommentSidebar from "@/components/CommentSidebar";
+import P2PCallPanel from "@/components/P2PCallPanel";
+import PresenceBar from "@/components/PresenceBar";
+import LocalVideo from "@/components/LocalVideo";
 import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { getEmbedUrl, formatTimecode } from "@/lib/videoUtils";
-import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX } from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Users } from "lucide-react";
 
 export default function SharedReview() {
   const { token } = useParams();
@@ -24,9 +28,9 @@ export default function SharedReview() {
   const [duration, setDuration] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
+  const [authRequired, setAuthRequired] = useState(false);
   const ytPlayerRef = useRef(null);
   const iframeRef = useRef(null);
-  const [authRequired, setAuthRequired] = useState(false);
 
   const doLogin = () => {
     window.sessionStorage.setItem("post_login_redirect", window.location.pathname);
@@ -43,10 +47,17 @@ export default function SharedReview() {
         const a = await api.get(`/annotations/${r.data.review.id}`);
         setAnnotations(a.data);
       } catch (e) {
-        if (e.response?.status === 401) { setAuthRequired(true); }
+        if (e.response?.status === 401) setAuthRequired(true);
       }
     })();
   }, [token]);
+
+  // Real-time: keep annotation pointers fresh
+  useEffect(() => {
+    if (!review) return;
+    const iv = setInterval(() => { api.get(`/annotations/${review.id}`).then(r => setAnnotations(r.data)).catch(() => {}); }, 4000);
+    return () => clearInterval(iv);
+  }, [review]);
 
   useEffect(() => {
     if (!review || review.video_type !== "youtube") return;
@@ -79,7 +90,7 @@ export default function SharedReview() {
 
   if (authRequired) return (
     <div className="min-h-screen bg-[#0A0A0B] text-[#EDEDF0] flex flex-col items-center justify-center gap-6 px-6" data-testid="shared-auth-gate">
-      <img src="/worxpher-logo.png" alt="Worxpher" className="h-10"/>
+      <img src="/worxpher-logo.png" alt="Worxpher" className="h-16"/>
       <div className="text-center max-w-sm">
         <h1 className="text-2xl font-semibold tracking-tight">This is a private review</h1>
         <p className="text-sm text-[#8A8A93] mt-2 font-mono">Sign in with Google to view and leave feedback on this shared project.</p>
@@ -93,37 +104,79 @@ export default function SharedReview() {
 
   if (!review) return <div className="min-h-screen bg-[#0A0A0B] text-[#EDEDF0] flex items-center justify-center">Loading…</div>;
 
-  const embed = getEmbedUrl(review.video_type, review.video_id) + (review.video_type === "youtube" ? "&controls=0&disablekb=1&iv_load_policy=3&fs=0" : "");
+  const isOwner = user?.user_id === review.owner_id;
+  const isYouTube = review.video_type === "youtube";
+  const isLocal = review.video_type === "local";
+  const embed = getEmbedUrl(review.video_type, review.video_id) + (isYouTube ? "&controls=0&disablekb=1&iv_load_policy=3&fs=0" : "");
   const progress = duration ? (currentTime / duration) * 100 : 0;
 
   return (
     <div className="min-h-screen bg-[#0A0A0B] text-[#EDEDF0]">
-      <header className="border-b border-[#232326] py-3 px-4 sm:px-8 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <img src="/worxpher-logo.png" alt="Worxpher" className="h-6"/>
-          <div className="border-l border-[#232326] pl-3"><p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#5A67D8]">Shared review · view + annotate</p><h1 className="text-lg font-medium">{review.title}</h1></div>
+      <header className="border-b border-[#232326] py-3 px-4 sm:px-8 flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-3 min-w-0">
+          <img src="/worxpher-logo.png" alt="Worxpher" className="h-12"/>
+          <div className="border-l border-[#232326] pl-3 min-w-0"><p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#5A67D8]">Shared review · view + annotate</p><h1 className="text-lg font-medium truncate">{review.title}</h1></div>
         </div>
-        {!user && <Button data-testid="shared-signin" onClick={doLogin} className="bg-[#5A67D8] rounded-sm">Sign in to comment</Button>}
+        <div className="flex items-center gap-3">
+          {user && <PresenceBar reviewId={review.id}/>}
+          {!user && <Button data-testid="shared-signin" onClick={doLogin} className="bg-[#5A67D8] rounded-sm">Sign in to comment</Button>}
+        </div>
       </header>
-      <main className="max-w-[1100px] mx-auto px-3 sm:px-6 py-4 grid lg:grid-cols-[1fr_340px] gap-4">
+      <main className="max-w-[1400px] mx-auto px-3 sm:px-6 py-4 grid lg:grid-cols-[1fr_360px] gap-4">
         <div>
           <div className="relative w-full aspect-video bg-black rounded-sm overflow-hidden border border-[#232326]" data-testid="shared-video-stage">
-            {review.video_type === "youtube" ? <iframe ref={iframeRef} src={embed} title="player" className="absolute inset-0 w-full h-full" allow="autoplay; encrypted-media"/> : <iframe src={embed} title="player" className="absolute inset-0 w-full h-full" allow="autoplay; encrypted-media"/>}
-            <AnnotationCanvas annotations={annotations} currentTime={currentTime} tool={tool} color={color} brush={brush} onAdd={addAnnotation} enabled={!!user && tool !== "select" && review.video_type === "youtube"}/>
+            {isYouTube ? (
+              <iframe ref={iframeRef} src={embed} title="player" className="absolute inset-0 w-full h-full" allow="autoplay; encrypted-media"/>
+            ) : isLocal ? (
+              user ? <LocalVideo reviewId={review.id} currentUser={user} isOwner={isOwner} onTime={setCurrentTime} onDuration={setDuration} onPlaying={setPlaying}/>
+                   : <div className="absolute inset-0 flex items-center justify-center font-mono text-[10px] uppercase tracking-wider text-[#8A8A93]">Sign in to watch the live broadcast</div>
+            ) : (
+              <iframe src={embed} title="player" className="absolute inset-0 w-full h-full" allow="autoplay; encrypted-media"/>
+            )}
+            <AnnotationCanvas annotations={annotations} currentTime={currentTime} tool={tool} color={color} brush={brush} onAdd={addAnnotation} enabled={!!user && tool !== "select" && (isYouTube || isLocal)}/>
           </div>
-          <input type="range" min={0} max={duration || 100} step={0.05} value={currentTime} onChange={(e) => seekTo(parseFloat(e.target.value))} className="w-full h-2 mt-3 appearance-none rounded-sm cursor-pointer accent-[#5A67D8]" style={{ background: `linear-gradient(to right, #5A67D8 0%, #5A67D8 ${progress}%, #232326 ${progress}%, #232326 100%)` }}/>
-          <div className="flex items-center justify-between mt-3 gap-2 flex-wrap">
-            <div className="flex items-center gap-1">
-              <button onClick={() => step(-0.05)} className="w-9 h-9 rounded-sm border border-[#232326] flex items-center justify-center"><SkipBack className="w-4 h-4"/></button>
-              <button onClick={togglePlay} className="w-9 h-9 rounded-sm bg-[#5A67D8] flex items-center justify-center">{playing ? <Pause className="w-4 h-4"/> : <Play className="w-4 h-4"/>}</button>
-              <button onClick={() => step(0.05)} className="w-9 h-9 rounded-sm border border-[#232326] flex items-center justify-center"><SkipForward className="w-4 h-4"/></button>
-              <button onClick={toggleMute} className="w-9 h-9 rounded-sm border border-[#232326] ml-1 flex items-center justify-center">{muted ? <VolumeX className="w-4 h-4 text-[#EF4444]"/> : <Volume2 className="w-4 h-4"/>}</button>
-              <span className="ml-2 font-mono text-xs text-[#5A67D8]">{formatTimecode(currentTime)} / {formatTimecode(duration)}</span>
+
+          {isYouTube && (
+            <div className="mt-3 relative">
+              <input type="range" min={0} max={duration || 100} step={0.05} value={currentTime} onChange={(e) => seekTo(parseFloat(e.target.value))} data-testid="shared-scrubber" className="w-full h-2 appearance-none rounded-sm cursor-pointer accent-[#5A67D8]" style={{ background: `linear-gradient(to right, #5A67D8 0%, #5A67D8 ${progress}%, #232326 ${progress}%, #232326 100%)` }}/>
             </div>
+          )}
+
+          <div className="flex items-center justify-between mt-3 gap-2 flex-wrap">
+            {isYouTube ? (
+              <div className="flex items-center gap-1">
+                <button onClick={() => step(-0.05)} className="w-9 h-9 rounded-sm border border-[#232326] flex items-center justify-center"><SkipBack className="w-4 h-4"/></button>
+                <button onClick={togglePlay} data-testid="shared-play" className="w-9 h-9 rounded-sm bg-[#5A67D8] flex items-center justify-center">{playing ? <Pause className="w-4 h-4"/> : <Play className="w-4 h-4"/>}</button>
+                <button onClick={() => step(0.05)} className="w-9 h-9 rounded-sm border border-[#232326] flex items-center justify-center"><SkipForward className="w-4 h-4"/></button>
+                <button onClick={toggleMute} className="w-9 h-9 rounded-sm border border-[#232326] ml-1 flex items-center justify-center">{muted ? <VolumeX className="w-4 h-4 text-[#EF4444]"/> : <Volume2 className="w-4 h-4"/>}</button>
+                <span className="ml-2 font-mono text-xs text-[#5A67D8]">{formatTimecode(currentTime)} / {formatTimecode(duration)}</span>
+              </div>
+            ) : (
+              <span className="font-mono text-[10px] uppercase tracking-wider text-[#5C5C66]">{formatTimecode(currentTime)} / {formatTimecode(duration)} · live broadcast</span>
+            )}
             {user && <Toolbar tool={tool} setTool={setTool} color={color} setColor={setColor} brush={brush} setBrush={setBrush} onClear={() => {}}/>}
           </div>
+
+          {/* Mobile inline comments + P2P */}
+          <div className="lg:hidden mt-6">
+            <div className="border border-[#232326] rounded-sm bg-[#0A0A0B] h-[55vh] overflow-hidden">
+              <CommentSidebar reviewId={review.id} currentTime={currentTime} onSeek={seekTo}/>
+            </div>
+            {user && (
+              <div className="mt-3 flex justify-center">
+                <Sheet>
+                  <SheetTrigger asChild><Button data-testid="shared-mobile-p2p" className="bg-[#10B981] text-black hover:bg-[#0a8763] rounded-sm h-11 px-4"><Users className="w-4 h-4 mr-2"/><span className="font-mono text-xs uppercase tracking-wider">P2P Call</span></Button></SheetTrigger>
+                  <SheetContent side="bottom" className="bg-[#0A0A0B] border-t border-[#232326] h-[75vh] p-0 overflow-y-auto"><P2PCallPanel reviewId={review.id} currentUser={user}/></SheetContent>
+                </Sheet>
+              </div>
+            )}
+          </div>
         </div>
-        <aside className="border border-[#232326] rounded-sm overflow-hidden h-[calc(100vh-200px)]"><CommentSidebar reviewId={review.id} currentTime={currentTime} onSeek={seekTo}/></aside>
+
+        <aside className="hidden lg:flex flex-col border border-[#232326] rounded-sm bg-[#0A0A0B] overflow-hidden h-[calc(100vh-160px)] sticky top-4">
+          {user && <P2PCallPanel reviewId={review.id} currentUser={user}/>}
+          <div className="flex-1 min-h-0"><CommentSidebar reviewId={review.id} currentTime={currentTime} onSeek={seekTo}/></div>
+        </aside>
       </main>
       <Footer/>
       <AdLockModal open={adOpen} onClose={() => setAdOpen(false)} onComplete={() => setAdOpen(false)} durationSec={15}/>

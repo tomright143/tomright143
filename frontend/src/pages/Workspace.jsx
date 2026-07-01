@@ -151,7 +151,8 @@ export default function Workspace() {
   };
 
   const handlePdfExport = useCallback(() => {
-    if (user.plan === "free") { setAdOpen(true); return; }
+    if (user.limits && user.limits.pdf_export === false) { toast.error("PDF export isn't available on your plan. Upgrade to export."); return; }
+    if (user.limits ? user.limits.ads_on_export : user.plan === "free") { setAdOpen(true); return; }
     doExportPdf();
   }, [user]); // eslint-disable-line
 

@@ -32,36 +32,59 @@ export default function Pricing() {
   const [txn, setTxn] = useState("");
   const [gst, setGst] = useState(user?.gst_no || "");
   const [content, setContent] = useState(null);
+  const [planCfg, setPlanCfg] = useState({});
+  const [coupon, setCoupon] = useState("");
+  const [couponMsg, setCouponMsg] = useState(null);
 
   useEffect(() => { api.get("/billing/upi-info").then(r => setUpi(r.data)); }, []);
   useEffect(() => { api.get("/content").then(r => setContent(r.data)).catch(() => {}); }, []);
+  useEffect(() => { api.get("/billing/plans").then(r => setPlanCfg(r.data.plans || {})).catch(() => {}); }, []);
 
   const plans = PLANS.map(p => {
     const ov = content?.plans?.[p.id];
-    return ov ? { ...p, name: ov.name || p.name, perks: (ov.perks && ov.perks.length ? ov.perks : p.perks) } : p;
-  });
+    const cfg = planCfg[p.id] || {};
+    const merged = { ...p };
+    if (ov) { merged.name = ov.name || p.name; merged.perks = (ov.perks && ov.perks.length ? ov.perks : p.perks); }
+    if (typeof cfg.price === "number") merged.price = cfg.price;
+    merged.enabled = cfg.enabled !== false;
+    merged.offer_percent = cfg.offer_percent || 0;
+    merged.effective_price = typeof cfg.effective_price === "number" ? cfg.effective_price : merged.price;
+    return merged;
+  }).filter(p => p.enabled);
 
   const request = async (plan) => {
     if (plan === "free") return;
-    setSelected(plan);
+    setSelected(plan); setCoupon(""); setCouponMsg(null);
     try {
       const r = await api.get(`/billing/upi-qr?plan=${plan}`);
-      const info = { qr_image: r.data.qr, upi_id: "tomright143-1@okhdfcbank", upi_link: r.data.upi_link, amount: r.data.amount };
+      const info = { qr_image: r.data.qr, upi_id: "tomright143-1@okhdfcbank", upi_link: r.data.upi_link, amount: r.data.amount, base_price: r.data.base_price, offer_percent: r.data.offer_percent, coupon_percent: r.data.coupon_percent };
       setUpi(info);
-      // Mobile: auto-open the UPI pay sheet so the user lands directly in their UPI app
       if (typeof window !== "undefined" && window.matchMedia("(max-width: 768px)").matches) {
         setTimeout(() => { window.location.href = r.data.upi_link; }, 400);
       }
       setTimeout(() => document.querySelector("[data-testid='upi-pay-panel']")?.scrollIntoView({ behavior: "smooth", block: "center" }), 150);
-    } catch { toast.error("Could not generate QR"); }
+    } catch (e) { toast.error(e.response?.data?.detail || "Could not generate QR"); }
+  };
+
+  const applyCoupon = async () => {
+    if (!coupon.trim()) return;
+    try {
+      const r = await api.get(`/billing/upi-qr?plan=${selected}&coupon=${encodeURIComponent(coupon.trim())}`);
+      setUpi(u => ({ ...u, qr_image: r.data.qr, upi_link: r.data.upi_link, amount: r.data.amount, coupon_percent: r.data.coupon_percent }));
+      if (r.data.coupon_percent > 0) setCouponMsg({ ok: true, text: `Coupon applied · ${r.data.coupon_percent}% off` });
+      else {
+        const v = await api.post("/billing/validate-coupon", { plan: selected, code: coupon.trim() });
+        setCouponMsg({ ok: false, text: v.data.message || "Invalid coupon" });
+      }
+    } catch { setCouponMsg({ ok: false, text: "Could not apply coupon" }); }
   };
 
   const submit = async () => {
     if (!txn) return toast.error("Enter UPI transaction reference after paying");
     try {
-      await api.post("/billing/upi-request", { plan: selected, txn_ref: txn, gst_no: gst });
+      await api.post("/billing/upi-request", { plan: selected, txn_ref: txn, gst_no: gst, coupon: coupon.trim() });
       toast.success("Payment submitted — admin will activate plan shortly.");
-      setSelected(null); setTxn(""); refresh();
+      setSelected(null); setTxn(""); setCoupon(""); setCouponMsg(null); refresh();
     } catch (e) { toast.error("Failed"); }
   };
 
@@ -75,7 +98,6 @@ export default function Pricing() {
         </div>
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
           {plans.map(p => {
-            const base = (p.price / 1.18).toFixed(2); const gstAmt = (p.price - base).toFixed(2);
             const isCurrent = user?.plan === p.id;
             const isSel = selected === p.id;
             return (
@@ -93,8 +115,14 @@ export default function Pricing() {
                 {isCurrent && <span className="absolute -top-2.5 left-4 bg-[#10B981] text-black text-[9px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-sm">Current plan</span>}
                 {!isCurrent && p.featured && <span className="absolute -top-2.5 right-4 text-white text-[9px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-sm" style={{ background: p.accent }}>Popular</span>}
                 <p className="font-mono text-[10px] uppercase tracking-[0.2em] mt-1" style={{ color: p.accent }}>{p.name}</p>
-                <div className="mt-3 flex items-baseline gap-1"><span className="text-3xl font-semibold">₹{p.price}</span><span className="text-xs text-[#5C5C66] font-mono">/mo</span></div>
-                {p.price > 0 && <p className="font-mono text-[9px] text-[#5C5C66] mt-0.5">Base ₹{base} + GST ₹{gstAmt}</p>}
+                {p.offer_percent > 0 ? (
+                  <>
+                    <div className="mt-3 flex items-baseline gap-2" data-testid={`plan-price-${p.id}`}><span className="text-3xl font-semibold">₹{p.effective_price}</span><span className="text-sm text-[#5C5C66] line-through">₹{p.price}</span><span className="text-xs text-[#5C5C66] font-mono">/mo</span></div>
+                    <span className="inline-block mt-1 px-1.5 py-0.5 rounded-sm text-[9px] font-mono uppercase tracking-wider text-black" style={{ background: p.accent }} data-testid={`plan-offer-${p.id}`}>{p.offer_percent}% off</span>
+                  </>
+                ) : (
+                  <div className="mt-3 flex items-baseline gap-1" data-testid={`plan-price-${p.id}`}><span className="text-3xl font-semibold">₹{p.price}</span><span className="text-xs text-[#5C5C66] font-mono">/mo</span></div>
+                )}
                 <ul className="mt-5 space-y-2">{p.perks.map((perk, i) => <li key={i} className="flex items-start gap-2 text-xs"><Check className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: p.accent }}/>{perk}</li>)}</ul>
                 <Button data-testid={`subscribe-${p.id}`} onClick={(e) => { e.stopPropagation(); request(p.id); }} disabled={p.id === "free"}
                   className="w-full mt-5 rounded-sm h-9 text-xs font-medium transition-colors"
@@ -134,6 +162,10 @@ export default function Pricing() {
                 </div>
                 <div><Label className="font-mono text-[10px] uppercase tracking-wider text-[#8A8A93]">UPI ID</Label>
                   <div className="flex gap-2 mt-1"><Input value={upi.upi_id} readOnly className="bg-[#0A0A0B] border-[#232326] font-mono text-xs" data-testid="upi-id"/><Button onClick={() => { navigator.clipboard.writeText(upi.upi_id); toast.success("Copied"); }} className="bg-[#0A0A0B] border border-[#232326] rounded-sm"><Copy className="w-3.5 h-3.5"/></Button></div>
+                </div>
+                <div><Label className="font-mono text-[10px] uppercase tracking-wider text-[#8A8A93]">Have a coupon?</Label>
+                  <div className="flex gap-2 mt-1"><Input value={coupon} onChange={(e) => setCoupon(e.target.value.toUpperCase())} placeholder="WELCOME20" data-testid="coupon-input" className="bg-[#0A0A0B] border-[#232326] font-mono text-xs uppercase"/><Button onClick={applyCoupon} data-testid="apply-coupon" className="bg-[#0A0A0B] border border-[#5A67D8] text-[#5A67D8] hover:bg-[#5A67D8] hover:text-white rounded-sm font-mono text-[10px] uppercase tracking-wider">Apply</Button></div>
+                  {couponMsg && <p data-testid="coupon-msg" className={`font-mono text-[10px] mt-1 ${couponMsg.ok ? "text-[#10B981]" : "text-[#EF4444]"}`}>{couponMsg.text}</p>}
                 </div>
                 <div><Label className="font-mono text-[10px] uppercase tracking-wider text-[#8A8A93]">UPI transaction reference</Label><Input value={txn} onChange={(e) => setTxn(e.target.value)} placeholder="UTR / Txn ID" data-testid="upi-txn" className="bg-[#0A0A0B] border-[#232326] mt-1 font-mono text-xs"/></div>
                 <div><Label className="font-mono text-[10px] uppercase tracking-wider text-[#8A8A93]">GST number (optional, for invoice)</Label><Input value={gst} onChange={(e) => setGst(e.target.value)} placeholder="27AABCU9603R1ZM" data-testid="gst-input" className="bg-[#0A0A0B] border-[#232326] mt-1 font-mono text-xs"/></div>

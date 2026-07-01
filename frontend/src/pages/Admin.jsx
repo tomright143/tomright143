@@ -27,14 +27,32 @@ export default function Admin() {
   const saveContent = async () => { await api.post("/admin/content", content); toast.success("Site content updated"); };
   const setPlanField = (id, field, value) => setContent(c => ({ ...c, plans: { ...c.plans, [id]: { ...(c.plans?.[id] || {}), [field]: value } } }));
 
+  const [planConfig, setPlanConfig] = useState({});
+  const savePlanConfig = async () => { await api.post("/admin/plans/config", planConfig); toast.success("Plan features & offers updated"); load(); };
+  const setLimit = (id, key, value) => setPlanConfig(c => ({ ...c, [id]: { ...c[id], limits: { ...(c[id]?.limits || {}), [key]: value } } }));
+  const setEnabled = (id, value) => setPlanConfig(c => ({ ...c, [id]: { ...c[id], enabled: value } }));
+  const setOffer = (id, key, value) => setPlanConfig(c => ({ ...c, [id]: { ...c[id], offer: { ...(c[id]?.offer || {}), [key]: value } } }));
+
+  const [coupons, setCoupons] = useState([]);
+  const [newCoupon, setNewCoupon] = useState({ code: "", percent: 20, expires_at: "", new_users_only: true });
+  const addCoupon = async () => {
+    if (!newCoupon.code) return toast.error("Enter a coupon code");
+    await api.post("/admin/coupons", { ...newCoupon, plans: [] });
+    setNewCoupon({ code: "", percent: 20, expires_at: "", new_users_only: true }); loadCoupons(); toast.success("Coupon created");
+  };
+  const delCoupon = async (code) => { await api.delete(`/admin/coupons/${code}`); loadCoupons(); };
+  const loadCoupons = async () => { const r = await api.get("/admin/coupons"); setCoupons(r.data); };
+
   const load = async () => {
-    const [s, u, p, a, ad, pl, ct] = await Promise.all([
+    const [s, u, p, a, ad, pl, ct, pc, cp] = await Promise.all([
       api.get("/admin/stats"), api.get("/admin/users"), api.get("/admin/payments"),
       api.get("/admin/admins"), api.get("/admin/ads"), api.get("/billing/plans"), api.get("/content"),
+      api.get("/plans/config"), api.get("/admin/coupons"),
     ]);
     setStats(s.data); setUsers(u.data); setPayments(p.data); setAdmins(a.data); setAds(ad.data);
     setPrices(pl.data.prices);
     setContent({ landing_headline: ct.data.landing_headline || "", landing_tagline: ct.data.landing_tagline || "", footer_text: ct.data.footer_text || "", plans: ct.data.plans || {} });
+    setPlanConfig(pc.data); setCoupons(cp.data);
   };
   useEffect(() => { if (user?.is_admin) load(); }, [user]);
 
@@ -58,7 +76,7 @@ export default function Admin() {
     } catch { toast.error("Reset failed"); }
   };
 
-  const TABS = [["stats","Overview"],["content","Content"],["pricing","Pricing"],["payments","Payments"],["ads","Ads"],["admins","Admins"],["users","Users"]];
+  const TABS = [["stats","Overview"],["content","Content"],["features","Plans & Offers"],["coupons","Coupons"],["pricing","Pricing"],["payments","Payments"],["ads","Ads"],["admins","Admins"],["users","Users"]];
 
   return (
     <div className="min-h-screen bg-[#0A0A0B] text-[#EDEDF0]">
@@ -98,6 +116,59 @@ export default function Admin() {
                 ))}
               </div>
               <Button onClick={saveContent} data-testid="save-content" className="bg-[#5A67D8] hover:bg-[#4C51BF] rounded-sm">Save content</Button>
+            </div>
+          )}
+          {tab === "features" && (
+            <div className="space-y-4 max-w-3xl" data-testid="admin-features">
+              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#8A8A93]">Feature limits, plan on/off & offers · -1 = unlimited</p>
+              {["free","creator","studio","business"].map(id => {
+                const pc = planConfig[id] || { limits: {}, offer: {} };
+                const L = pc.limits || {};
+                const numFields = [["max_reviews","Max reviews"],["max_reviewers","Max reviewers"],["storage_gb","Storage GB"]];
+                const boolFields = [["ads_on_export","Ads on export"],["white_label","White-label"],["local_broadcast","Local broadcast"],["pdf_export","PDF export"]];
+                return (
+                  <div key={id} className="border border-[#232326] rounded-sm bg-[#121214] p-4" data-testid={`plan-cfg-${id}`}>
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="font-mono text-xs uppercase tracking-[0.2em] text-[#5A67D8]">{id}</span>
+                      <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" data-testid={`plan-enabled-${id}`} checked={pc.enabled !== false} onChange={e=>setEnabled(id, e.target.checked)}/><span className="font-mono text-[10px] uppercase tracking-wider text-[#8A8A93]">{pc.enabled !== false ? "Enabled" : "Hidden"}</span></label>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {numFields.map(([k,label]) => (
+                        <div key={k}><label className="font-mono text-[9px] uppercase tracking-wider text-[#8A8A93]">{label}</label><Input type="number" data-testid={`limit-${id}-${k}`} value={L[k] ?? 0} onChange={e=>setLimit(id,k,parseInt(e.target.value))} className="bg-[#0A0A0B] border-[#232326] mt-1 h-8"/></div>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap gap-4 mt-3">
+                      {boolFields.map(([k,label]) => (
+                        <label key={k} className="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" data-testid={`limit-${id}-${k}`} checked={!!L[k]} onChange={e=>setLimit(id,k,e.target.checked)}/><span className="font-mono text-[10px] text-[#EDEDF0]">{label}</span></label>
+                      ))}
+                    </div>
+                    {id !== "free" && (
+                      <div className="flex items-end gap-3 mt-3 pt-3 border-t border-[#232326]">
+                        <div><label className="font-mono text-[9px] uppercase tracking-wider text-[#F59E0B]">Offer %</label><Input type="number" data-testid={`offer-percent-${id}`} value={pc.offer?.percent || 0} onChange={e=>setOffer(id,"percent",parseInt(e.target.value)||0)} className="bg-[#0A0A0B] border-[#232326] mt-1 h-8 w-24"/></div>
+                        <div><label className="font-mono text-[9px] uppercase tracking-wider text-[#F59E0B]">Until (date)</label><Input type="date" data-testid={`offer-until-${id}`} value={pc.offer?.until || ""} onChange={e=>setOffer(id,"until",e.target.value)} className="bg-[#0A0A0B] border-[#232326] mt-1 h-8"/></div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              <Button onClick={savePlanConfig} data-testid="save-plan-config" className="bg-[#5A67D8] hover:bg-[#4C51BF] rounded-sm">Save plans & offers</Button>
+            </div>
+          )}
+          {tab === "coupons" && (
+            <div className="space-y-4 max-w-2xl" data-testid="admin-coupons">
+              <div className="border border-[#232326] rounded-sm bg-[#121214] p-4 grid sm:grid-cols-4 gap-2 items-end">
+                <div><label className="font-mono text-[9px] uppercase tracking-wider text-[#8A8A93]">Code</label><Input data-testid="coupon-code" value={newCoupon.code} onChange={e=>setNewCoupon({...newCoupon, code:e.target.value.toUpperCase()})} placeholder="WELCOME20" className="bg-[#0A0A0B] border-[#232326] mt-1 font-mono uppercase"/></div>
+                <div><label className="font-mono text-[9px] uppercase tracking-wider text-[#8A8A93]">Percent %</label><Input type="number" data-testid="coupon-percent" value={newCoupon.percent} onChange={e=>setNewCoupon({...newCoupon, percent:parseInt(e.target.value)||0})} className="bg-[#0A0A0B] border-[#232326] mt-1"/></div>
+                <div><label className="font-mono text-[9px] uppercase tracking-wider text-[#8A8A93]">Expires</label><Input type="date" data-testid="coupon-expiry" value={newCoupon.expires_at} onChange={e=>setNewCoupon({...newCoupon, expires_at:e.target.value})} className="bg-[#0A0A0B] border-[#232326] mt-1"/></div>
+                <Button onClick={addCoupon} data-testid="create-coupon" className="bg-[#5A67D8] hover:bg-[#4C51BF] rounded-sm">Create</Button>
+                <label className="flex items-center gap-1.5 cursor-pointer sm:col-span-4"><input type="checkbox" data-testid="coupon-newusers" checked={newCoupon.new_users_only} onChange={e=>setNewCoupon({...newCoupon, new_users_only:e.target.checked})}/><span className="font-mono text-[10px] text-[#8A8A93]">New users only · single-use per user</span></label>
+              </div>
+              <div className="border border-[#232326] rounded-sm overflow-hidden">
+                <table className="w-full text-sm"><thead><tr className="border-b border-[#232326] text-left"><th className="p-3 font-mono text-[10px] uppercase">Code</th><th className="p-3 font-mono text-[10px] uppercase">Off</th><th className="p-3 font-mono text-[10px] uppercase">Expires</th><th className="p-3 font-mono text-[10px] uppercase">New only</th><th className="p-3 font-mono text-[10px] uppercase">Used</th><th className="p-3"></th></tr></thead><tbody>
+                {coupons.length === 0 && <tr><td colSpan={6} className="p-4 font-mono text-[10px] text-[#5C5C66]">No coupons yet.</td></tr>}
+                {coupons.map(c => <tr key={c.code} className="border-b border-[#232326]" data-testid={`coupon-row-${c.code}`}><td className="p-3 font-mono">{c.code}</td><td className="p-3">{c.percent}%</td><td className="p-3 font-mono text-xs">{c.expires_at || "—"}</td><td className="p-3">{c.new_users_only ? "Yes" : "No"}</td><td className="p-3">{c.redemptions || 0}</td><td className="p-3"><button data-testid={`delete-coupon-${c.code}`} onClick={()=>delCoupon(c.code)} className="text-[#EF4444] hover:underline font-mono text-[10px] uppercase">Delete</button></td></tr>)}
+                </tbody></table>
+              </div>
             </div>
           )}
           {tab === "pricing" && (

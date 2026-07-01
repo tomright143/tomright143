@@ -32,14 +32,14 @@ export default function Settings() {
 
   const save = async () => { await api.post("/settings/profile", { gst_no: gst, company }); toast.success("Saved"); refresh(); };
   const saveBrand = async () => {
-    if (!["studio", "business"].includes(user?.plan)) return toast.error("Studio/Business plan required");
+    if (!user?.limits?.white_label) return toast.error("Studio/Business plan required");
     await api.post("/settings/profile", { website, instagram, brand_accent: accent });
     toast.success("Brand settings saved"); refresh();
   };
 
   const onLogo = (e) => {
     const file = e.target.files?.[0]; if (!file) return;
-    if (user.plan !== "studio" && user.plan !== "business") return toast.error("Studio/Business plan required");
+    if (!user?.limits?.white_label) return toast.error("White-label requires Studio/Business plan");
     if (file.size > 250 * 1024) return toast.error("Logo must be < 250KB");
     const reader = new FileReader();
     reader.onload = async () => { await api.post("/settings/profile", { brand_logo: reader.result }); toast.success("Brand logo updated"); refresh(); };
@@ -88,16 +88,16 @@ export default function Settings() {
         <section className="mt-6 border border-[#232326] rounded-sm bg-[#121214] p-5">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div><p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#8A8A93] mb-1">White-label brand logo</p><h3 className="text-base font-medium">Replace app branding on dashboard & PDFs (Studio/Business)</h3></div>
-            {!["studio","business"].includes(user?.plan) && <Lock className="w-4 h-4 text-[#5C5C66]"/>}
+            {!user?.limits?.white_label && <Lock className="w-4 h-4 text-[#5C5C66]"/>}
           </div>
           {user?.brand_logo && <div className="mt-3 border border-[#232326] rounded-sm p-3 bg-[#0A0A0B]"><img src={user.brand_logo} alt="brand" className="h-10"/></div>}
-          <label className="inline-flex items-center gap-2 px-3 py-2 mt-3 border border-[#232326] rounded-sm cursor-pointer hover:bg-[#1a1a1d]"><Upload className="w-4 h-4"/><span className="font-mono text-xs uppercase tracking-wider">Upload logo</span><input data-testid="brand-logo-input" type="file" accept="image/*" className="hidden" onChange={onLogo} disabled={!["studio","business"].includes(user?.plan)}/></label>
+          <label className="inline-flex items-center gap-2 px-3 py-2 mt-3 border border-[#232326] rounded-sm cursor-pointer hover:bg-[#1a1a1d]"><Upload className="w-4 h-4"/><span className="font-mono text-xs uppercase tracking-wider">Upload logo</span><input data-testid="brand-logo-input" type="file" accept="image/*" className="hidden" onChange={onLogo} disabled={!user?.limits?.white_label}/></label>
           <div className="mt-5 grid sm:grid-cols-3 gap-3 pt-4 border-t border-[#232326]">
-            <div><label className="font-mono text-[10px] uppercase tracking-wider text-[#8A8A93]">Website URL</label><Input data-testid="brand-website-input" value={website} onChange={e=>setWebsite(e.target.value)} placeholder="https://studio.com" disabled={!["studio","business"].includes(user?.plan)} className="bg-[#0A0A0B] border-[#232326] mt-1 font-mono text-xs"/></div>
-            <div><label className="font-mono text-[10px] uppercase tracking-wider text-[#8A8A93]">Instagram URL</label><Input data-testid="brand-instagram-input" value={instagram} onChange={e=>setInstagram(e.target.value)} placeholder="https://instagram.com/studio" disabled={!["studio","business"].includes(user?.plan)} className="bg-[#0A0A0B] border-[#232326] mt-1 font-mono text-xs"/></div>
-            <div><label className="font-mono text-[10px] uppercase tracking-wider text-[#8A8A93]">Accent colour</label><div className="flex items-center gap-2 mt-1"><input data-testid="brand-accent-input" type="color" value={accent} onChange={e=>setAccent(e.target.value)} disabled={!["studio","business"].includes(user?.plan)} className="w-10 h-9 bg-transparent border border-[#232326] rounded-sm cursor-pointer"/><Input value={accent} onChange={e=>setAccent(e.target.value)} disabled={!["studio","business"].includes(user?.plan)} className="bg-[#0A0A0B] border-[#232326] font-mono text-xs"/></div></div>
+            <div><label className="font-mono text-[10px] uppercase tracking-wider text-[#8A8A93]">Website URL</label><Input data-testid="brand-website-input" value={website} onChange={e=>setWebsite(e.target.value)} placeholder="https://studio.com" disabled={!user?.limits?.white_label} className="bg-[#0A0A0B] border-[#232326] mt-1 font-mono text-xs"/></div>
+            <div><label className="font-mono text-[10px] uppercase tracking-wider text-[#8A8A93]">Instagram URL</label><Input data-testid="brand-instagram-input" value={instagram} onChange={e=>setInstagram(e.target.value)} placeholder="https://instagram.com/studio" disabled={!user?.limits?.white_label} className="bg-[#0A0A0B] border-[#232326] mt-1 font-mono text-xs"/></div>
+            <div><label className="font-mono text-[10px] uppercase tracking-wider text-[#8A8A93]">Accent colour</label><div className="flex items-center gap-2 mt-1"><input data-testid="brand-accent-input" type="color" value={accent} onChange={e=>setAccent(e.target.value)} disabled={!user?.limits?.white_label} className="w-10 h-9 bg-transparent border border-[#232326] rounded-sm cursor-pointer"/><Input value={accent} onChange={e=>setAccent(e.target.value)} disabled={!user?.limits?.white_label} className="bg-[#0A0A0B] border-[#232326] font-mono text-xs"/></div></div>
           </div>
-          <Button onClick={saveBrand} data-testid="save-brand" disabled={!["studio","business"].includes(user?.plan)} className="mt-4 bg-[#5A67D8] hover:bg-[#4C51BF] rounded-sm">Save brand settings</Button>
+          <Button onClick={saveBrand} data-testid="save-brand" disabled={!user?.limits?.white_label} className="mt-4 bg-[#5A67D8] hover:bg-[#4C51BF] rounded-sm">Save brand settings</Button>
         </section>
 
         <section className="mt-6 border border-[#232326] rounded-sm bg-[#121214] p-5" data-testid="invoices-section">

@@ -152,6 +152,7 @@ async def me(request: Request):
         u["plan_until"] = until
     admin_doc = await db.admins.find_one({"email": u["email"]}, {"_id": 0})
     u["is_admin"] = (u["email"] == DEFAULT_ADMIN) or bool(admin_doc)
+    u["limits"] = await plan_limits(u["plan"])
     return u
 
 @api_router.post("/auth/logout")
@@ -166,12 +167,20 @@ async def logout(request: Request, response: Response):
 @api_router.post("/reviews")
 async def create_review(payload: ReviewCreate, request: Request):
     user = await get_current_user(request)
+    lim = await plan_limits(user["plan"])
     if payload.video_type == "local":
+        if not lim.get("local_broadcast"):
+            raise HTTPException(403, "Live local broadcast isn't available on your plan. Upgrade to use it.")
         info = {"video_type": "local", "video_id": f"local_{uuid.uuid4().hex[:8]}"}
     else:
         info = extract_video_info(payload.video_url)
         if info["video_type"] == "unknown":
             raise HTTPException(400, "Unsupported URL. Use YouTube or Vimeo, or pick a local file for live broadcast.")
+    max_reviews = lim.get("max_reviews", -1)
+    if max_reviews != -1:
+        cnt = await db.reviews.count_documents({"owner_id": user["user_id"]})
+        if cnt >= max_reviews:
+            raise HTTPException(403, f"You've reached your plan's limit of {max_reviews} active reviews. Upgrade or delete one to add more.")
     rid = f"rev_{uuid.uuid4().hex[:12]}"
     share_token = f"sh_{uuid.uuid4().hex[:14]}"
     doc = {
@@ -285,6 +294,13 @@ async def get_shared(token: str, request: Request):
     if not is_owner:
         existing_viewer = await db.review_viewers.find_one({"review_id": r["id"], "user_id": u["user_id"]})
         if not existing_viewer:
+            owner = await db.users.find_one({"user_id": r["owner_id"]}, {"_id": 0})
+            owner_lim = await plan_limits((owner or {}).get("plan", "free"))
+            max_rev = owner_lim.get("max_reviewers", -1)
+            if max_rev != -1:
+                vcount = await db.review_viewers.count_documents({"review_id": r["id"]})
+                if vcount >= max_rev:
+                    raise HTTPException(403, "This review has reached its reviewer limit for the owner's plan.")
             await db.review_viewers.insert_one({
                 "review_id": r["id"], "user_id": u["user_id"],
                 "name": u["name"], "email": u["email"], "joined_at": now_iso(),
@@ -412,10 +428,90 @@ async def get_plan_prices():
     doc = await db.config.find_one({"key": "plan_prices"}, {"_id": 0})
     return doc["value"] if doc else PLAN_PRICES_DEFAULT
 
+DEFAULT_PLAN_CONFIG = {
+    "free":     {"enabled": True, "limits": {"max_reviews": 3, "max_reviewers": 3, "ads_on_export": True, "white_label": False, "local_broadcast": False, "pdf_export": True, "storage_gb": 0}, "offer": {}},
+    "creator":  {"enabled": True, "limits": {"max_reviews": -1, "max_reviewers": 10, "ads_on_export": False, "white_label": False, "local_broadcast": True, "pdf_export": True, "storage_gb": 0}, "offer": {}},
+    "studio":   {"enabled": True, "limits": {"max_reviews": -1, "max_reviewers": -1, "ads_on_export": False, "white_label": True, "local_broadcast": True, "pdf_export": True, "storage_gb": 0}, "offer": {}},
+    "business": {"enabled": True, "limits": {"max_reviews": -1, "max_reviewers": -1, "ads_on_export": False, "white_label": True, "local_broadcast": True, "pdf_export": True, "storage_gb": 20}, "offer": {}},
+}
+
+async def get_plan_config():
+    doc = await db.config.find_one({"key": "plan_config"}, {"_id": 0})
+    saved = (doc or {}).get("value") or {}
+    cfg = {}
+    for pid, base in DEFAULT_PLAN_CONFIG.items():
+        merged = {"enabled": base["enabled"], "limits": dict(base["limits"]), "offer": dict(base.get("offer") or {})}
+        s = saved.get(pid) or {}
+        if "enabled" in s: merged["enabled"] = bool(s["enabled"])
+        if isinstance(s.get("limits"), dict): merged["limits"].update(s["limits"])
+        if isinstance(s.get("offer"), dict): merged["offer"] = s["offer"]
+        cfg[pid] = merged
+    return cfg
+
+def active_offer_percent(planobj):
+    off = planobj.get("offer") or {}
+    pct = int(off.get("percent") or 0)
+    if pct <= 0: return 0
+    until = off.get("until")
+    if until:
+        try:
+            if datetime.fromisoformat(until).date() < datetime.now(timezone.utc).date():
+                return 0
+        except Exception:
+            return 0
+    return pct
+
+async def plan_limits(plan):
+    cfg = await get_plan_config()
+    p = cfg.get(plan) or cfg["free"]
+    return p["limits"]
+
+async def validate_coupon_doc(code, plan, user):
+    if not code: return (0, None, "")
+    c = await db.coupons.find_one({"code": code.strip().upper()}, {"_id": 0})
+    if not c or not c.get("active", True): return (0, None, "Invalid coupon")
+    exp = c.get("expires_at")
+    if exp:
+        try:
+            if datetime.fromisoformat(exp).date() < datetime.now(timezone.utc).date():
+                return (0, None, "Coupon expired")
+        except Exception:
+            pass
+    if c.get("plans") and plan not in c["plans"]:
+        return (0, None, "Coupon not valid for this plan")
+    if c.get("new_users_only") and user.get("plan") != "free":
+        return (0, None, "Coupon is for new users only")
+    used = await db.coupon_redemptions.find_one({"code": c["code"], "user_id": user["user_id"]})
+    if used:
+        return (0, None, "Coupon already used")
+    return (int(c.get("percent") or 0), c, "")
+
+async def compute_amount(plan, coupon_code, user):
+    prices = await get_plan_prices()
+    if plan not in prices:
+        raise HTTPException(400, "Invalid plan")
+    cfg = await get_plan_config()
+    base = prices[plan]
+    offer_pct = active_offer_percent(cfg.get(plan) or {})
+    coupon_pct, cdoc, cmsg = await validate_coupon_doc(coupon_code, plan, user)
+    final = round(base * (1 - offer_pct / 100) * (1 - coupon_pct / 100))
+    return {"base_price": base, "offer_percent": offer_pct, "coupon_percent": coupon_pct,
+            "coupon_doc": cdoc, "coupon_message": cmsg, "amount": max(1, final)}
+
 @api_router.get("/billing/plans")
 async def billing_plans():
     prices = await get_plan_prices()
-    return {"prices": prices, "upi_id": UPI_ID, "qr_image": QR_IMAGE}
+    cfg = await get_plan_config()
+    plans = {}
+    for pid, pc in cfg.items():
+        base = prices.get(pid, 0)
+        offer_pct = active_offer_percent(pc)
+        plans[pid] = {
+            "enabled": pc["enabled"], "limits": pc["limits"], "offer": pc.get("offer") or {},
+            "price": base, "offer_percent": offer_pct,
+            "effective_price": round(base * (1 - offer_pct / 100)),
+        }
+    return {"prices": prices, "upi_id": UPI_ID, "qr_image": QR_IMAGE, "plans": plans}
 
 @api_router.post("/admin/plans")
 async def admin_set_plans(request: Request):
@@ -425,19 +521,89 @@ async def admin_set_plans(request: Request):
     await db.config.update_one({"key": "plan_prices"}, {"$set": {"key": "plan_prices", "value": prices}}, upsert=True)
     return {"ok": True, "prices": prices}
 
-@api_router.get("/billing/upi-qr")
-async def upi_qr(plan: str, request: Request):
+@api_router.get("/plans/config")
+async def plans_config(request: Request):
+    await get_current_user(request)
+    return await get_plan_config()
+
+@api_router.post("/admin/plans/config")
+async def admin_set_plan_config(request: Request):
+    await require_admin(request)
+    body = await request.json()  # {plan: {enabled, limits:{...}, offer:{percent, until}}}
+    # Persist ONLY the deltas over DEFAULT_PLAN_CONFIG so future default changes
+    # still apply to untouched fields (avoids freezing a full snapshot).
+    doc = await db.config.find_one({"key": "plan_config"}, {"_id": 0})
+    saved = dict((doc or {}).get("value") or {})
+    for pid, val in (body or {}).items():
+        if pid not in DEFAULT_PLAN_CONFIG:
+            continue
+        slot = dict(saved.get(pid) or {})
+        if "enabled" in val: slot["enabled"] = bool(val["enabled"])
+        if isinstance(val.get("limits"), dict): slot["limits"] = {**(slot.get("limits") or {}), **val["limits"]}
+        if isinstance(val.get("offer"), dict): slot["offer"] = val["offer"]
+        saved[pid] = slot
+    await db.config.update_one({"key": "plan_config"}, {"$set": {"key": "plan_config", "value": saved}}, upsert=True)
+    return {"ok": True, "plans": await get_plan_config()}
+
+@api_router.post("/admin/plans/config/reset")
+async def admin_reset_plan_config(request: Request):
+    await require_admin(request)
+    await db.config.delete_one({"key": "plan_config"})
+    return {"ok": True, "plans": await get_plan_config()}
+
+# ===== Coupons =====
+@api_router.get("/admin/coupons")
+async def list_coupons(request: Request):
+    await require_admin(request)
+    rows = await db.coupons.find({}, {"_id": 0}).sort("created_at", -1).to_list(300)
+    for c in rows:
+        c["redemptions"] = await db.coupon_redemptions.count_documents({"code": c["code"]})
+    return rows
+
+@api_router.post("/admin/coupons")
+async def create_coupon(request: Request):
+    await require_admin(request)
+    b = await request.json()
+    code = (b.get("code") or "").strip().upper()
+    if not code: raise HTTPException(400, "Code required")
+    doc = {
+        "code": code, "percent": int(b.get("percent") or 0),
+        "plans": b.get("plans") or [],  # [] = any plan
+        "new_users_only": bool(b.get("new_users_only")),
+        "expires_at": b.get("expires_at") or None,
+        "active": True, "created_at": now_iso(),
+    }
+    await db.coupons.update_one({"code": code}, {"$set": doc}, upsert=True)
+    return {"ok": True, "coupon": doc}
+
+@api_router.delete("/admin/coupons/{code}")
+async def delete_coupon(code: str, request: Request):
+    await require_admin(request)
+    await db.coupons.delete_one({"code": code.strip().upper()})
+    return {"ok": True}
+
+@api_router.post("/billing/validate-coupon")
+async def validate_coupon(request: Request):
     user = await get_current_user(request)
-    prices = await get_plan_prices()
-    if plan not in prices:
-        raise HTTPException(400, "Invalid plan")
-    amount = prices[plan]
-    upi_link = f"upi://pay?pa={UPI_ID}&pn=BlackFxtudio&am={amount}&cu=INR&tn=ReviewIO-{plan}"
+    b = await request.json()
+    plan = b.get("plan"); code = b.get("code")
+    calc = await compute_amount(plan, code, user)
+    valid = calc["coupon_percent"] > 0
+    return {"valid": valid, "percent": calc["coupon_percent"], "message": calc["coupon_message"] or ("Coupon applied" if valid else ""),
+            "amount": calc["amount"], "base_price": calc["base_price"], "offer_percent": calc["offer_percent"]}
+
+@api_router.get("/billing/upi-qr")
+async def upi_qr(plan: str, request: Request, coupon: str = ""):
+    user = await get_current_user(request)
+    calc = await compute_amount(plan, coupon, user)
+    amount = calc["amount"]
+    upi_link = f"upi://pay?pa={UPI_ID}&pn=BlackFxtudio&am={amount}&cu=INR&tn=Worxpher-{plan}"
     import qrcode, io, base64
     img = qrcode.make(upi_link)
     buf = io.BytesIO(); img.save(buf, format="PNG")
     b64 = base64.b64encode(buf.getvalue()).decode()
-    return {"qr": f"data:image/png;base64,{b64}", "upi_link": upi_link, "amount": amount}
+    return {"qr": f"data:image/png;base64,{b64}", "upi_link": upi_link, "amount": amount,
+            "base_price": calc["base_price"], "offer_percent": calc["offer_percent"], "coupon_percent": calc["coupon_percent"]}
 
 @api_router.post("/billing/upi-request")
 async def upi_request(request: Request):
@@ -446,19 +612,19 @@ async def upi_request(request: Request):
     plan = body.get("plan")
     txn_ref = body.get("txn_ref", "")
     gst_no = body.get("gst_no")
-    prices = await get_plan_prices()
-    if plan not in prices:
-        raise HTTPException(400, "Invalid plan")
-    amount = prices[plan]
+    coupon = body.get("coupon", "")
+    calc = await compute_amount(plan, coupon, user)
+    amount = calc["amount"]
     if gst_no:
         await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"gst_no": gst_no}})
     base = amount / 1.18
     gst = amount - base
     pid = f"pay_{uuid.uuid4().hex[:10]}"
-    upi_link = f"upi://pay?pa={UPI_ID}&pn=BlackFxtudio&am={amount}&cu=INR&tn=ReviewIO-{plan}-{pid}"
+    upi_link = f"upi://pay?pa={UPI_ID}&pn=BlackFxtudio&am={amount}&cu=INR&tn=Worxpher-{plan}-{pid}"
     await db.payments.insert_one({
         "id": pid, "user_id": user["user_id"], "email": user["email"], "name": user["name"],
         "plan": plan, "amount": amount, "base": round(base, 2), "gst": round(gst, 2),
+        "coupon": (calc["coupon_doc"] or {}).get("code"), "offer_percent": calc["offer_percent"], "coupon_percent": calc["coupon_percent"],
         "txn_ref": txn_ref, "status": "pending", "upi_link": upi_link, "created_at": now_iso(),
     })
     return {"ok": True, "payment_id": pid, "upi_id": UPI_ID, "qr_image": QR_IMAGE,
@@ -482,8 +648,9 @@ async def update_profile(request: Request):
     for f in ("gst_no", "company"):
         if f in body:
             updates[f] = body[f]
-    # White-label branding fields require Studio/Business
-    if user["plan"] in ("studio", "business"):
+    # White-label branding fields require the white_label plan limit
+    lim = await plan_limits(user["plan"])
+    if lim.get("white_label"):
         for f in ("brand_logo", "brand_accent", "website", "instagram"):
             if f in body:
                 updates[f] = body[f]
@@ -599,6 +766,13 @@ async def approve_payment(pid: str, request: Request):
     until = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
     await db.users.update_one({"user_id": p["user_id"]}, {"$set": {"plan": p["plan"], "plan_until": until}})
     await db.payments.update_one({"id": pid}, {"$set": {"status": "approved", "approved_at": now_iso()}})
+    # single-use per user: burn the coupon only on approval (idempotent)
+    if p.get("coupon") and (p.get("coupon_percent") or 0) > 0:
+        await db.coupon_redemptions.update_one(
+            {"code": p["coupon"], "user_id": p["user_id"]},
+            {"$set": {"code": p["coupon"], "user_id": p["user_id"], "used_at": now_iso()}},
+            upsert=True,
+        )
     # generate invoice
     inv_id = f"inv_{uuid.uuid4().hex[:10]}"
     await db.invoices.insert_one({

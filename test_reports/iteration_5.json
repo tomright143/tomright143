@@ -1,0 +1,38 @@
+{
+  "summary": "Frontend-only validation of iteration-4 admin billing UI on Worxpher. Exercised all 8 requested flows across admin/free/creator/studio sessions injected via /app/auth_testing.md. Every acceptance criterion PASSED with no UI defects.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dashboard/Settings dialogs", "issues": ["React accessibility warning: 'Missing Description or aria-describedby={undefined} for DialogContent' on DialogContent (new-review dialog). Cosmetic a11y warning, not blocking."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "(Optional/low) Add DialogDescription (or aria-describedby='undefined' explicit null) on Dashboard 'New review' DialogContent to silence Radix accessibility warning."
+  ],
+  "critical_code_review_comments": [
+    "Pricing.jsx uses <Label> shim that renders bare <label> without htmlFor -- functional but not associated to inputs; consider ui/label for a11y.",
+    "Admin.jsx savePlanConfig sends the full local planConfig state, not deltas -- main agent already added POST /admin/plans/config/reset to mitigate pollution; keep that endpoint documented.",
+    "Pricing.jsx applyCoupon calls /billing/upi-qr twice on invalid codes (once with coupon, then /validate-coupon) -- fine but slightly chatty."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "n/a (skipped)", "frontend": "100% (8/8 flows)" },
+  "test_credentials": "Injected via mongosh per /app/auth_testing.md. Admin=tom@blackfx.net; test tokens deleted after run.",
+  "seed_data_creation": "Created 4 temp users (admin/free/creator/studio) + sessions and 1 coupon (SAVE20). All cleaned up: coupon deleted via UI, plan_config reset via POST /api/admin/plans/config/reset (verified plans back to default, all enabled, no offers), test users + sessions removed from MongoDB.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "iteration-4 admin billing UI is fully green. Coupons collection, plan_config store, and users/sessions collections are clean. If re-running: use same auth_testing.md flow (mongosh insert users+sessions), token cookie 'session_token' on domain worxpher-review.preview.emergentagent.com. Studio offer badge testid plan-offer-{id}, discounted price shown as strikethrough inside plan-price-{id}. Business plan hides entirely from Pricing when plan-enabled-business unchecked.",
+  "detailed_results": {
+    "T1_plans_offers_tab": "PASS -- admin-tab-features shows all four plan-cfg-{id}, plan-enabled-{id}, three numeric limit-{id}-{max_reviews|max_reviewers|storage_gb}, four boolean limit-{id}-{ads_on_export|white_label|local_broadcast|pdf_export}, offer-percent/offer-until for creator/studio/business. save-plan-config toast 'Plan features & offers updated' fires.",
+    "T2_studio_40_offer": "PASS -- Set offer-percent-studio=40, offer-until-studio=2026-12-31, saved. Pricing (free session) shows plan-offer-studio badge '40% off' and plan-price-studio text '₹479 ₹799 /mo' (strikethrough on 799).",
+    "T3_disable_business": "PASS -- Unchecked plan-enabled-business + saved. On Pricing page, plan-business is not rendered.",
+    "T4_coupons_crud": "PASS -- coupon-code=SAVE20, coupon-percent=20, expiry=2026-12-31, create-coupon adds row. coupon-row-SAVE20 shows 20% and Yes new-users-only. delete-coupon-SAVE20 removes it.",
+    "T5_upi_coupon_apply": "PASS -- subscribe-creator opens upi-pay-panel (₹299 initial). Invalid code -> coupon-msg red 'Invalid coupon'. Valid SAVE20 -> coupon-msg green 'Coupon applied · 20% off', amount drops to ₹239.",
+    "T6_dashboard_source_local_gating": "PASS -- Free user source-local button text 'Local file · live 🔒', click shows upgrade toast and does NOT switch (no local-file-input rendered). Creator user source-local text has no lock, click reveals local-file-input picker.",
+    "T7_settings_whitelabel_gating": "PASS -- Creator: brand-website-input, brand-instagram-input, brand-accent-input all disabled, save-brand disabled. Studio: same inputs enabled, saveBrand succeeds via /settings/profile.",
+    "T8_regression": "PASS -- plan-free/creator/studio still render on Pricing with per-plan accent colors; upi-deeplink exists in panel; admin-tab-content save-content works; cancel-plan alert dialog testids intact."
+  },
+  "cleanup_performed": "1) delete-coupon-SAVE20 via UI (verified /api/admin/coupons returns []); 2) POST /api/admin/plans/config/reset (verified /billing/plans -> all 4 plans enabled, no offer_percent); 3) mongo deleteMany test users + sessions."
+}

@@ -76,6 +76,16 @@ Production-ready, mobile-responsive cross-platform web app called **"Zero-Storag
 ## Test Status (updated)
 - iteration_4.json/pytest: backend billing 16/16 (after fix). iteration_5.json: frontend billing UI 8/8, no bugs. WebRTC live media still MANUAL 2-browser test only.
 
+## Implemented in Iteration 6 — Streaming fix + privacy + per-user PDF + visible offers (Jun 2026)
+- **Local broadcast controls FIX**: the annotation-canvas *container* was intercepting clicks over the native video (play/pause dead). Container is now `pointer-events:none` (canvas itself only captures when a draw tool is active) — confirmed by testing agent. Also hardened the WebRTC broadcast: viewer video autoplays **muted** with a "tap to unmute" (browser autoplay policy was leaving the receiver blank), broadcast now starts on `loadeddata`/`playing`, and added a **"Change file" re-link** button on the broadcaster (also recovers after refresh, since blob URLs are session-only).
+- **Mention privacy**: @mention suggestions now come only from users **currently active** on the review (presence, 15s window) instead of the whole team; presence now includes email.
+- **Per-user PDF export**: extracted the frame-by-frame PDF engine to `lib/exportReviewPdf.js`; **any authenticated user** can now export from the SharedReview header (screenshots + annotations + comments), not just the owner.
+- **Coupons visible on Dashboard**: coupons now carry a **description**; new `GET /api/coupons/active` returns eligible coupons (respects new-users-only + already-redeemed) shown as an "Available offers" section with copy buttons.
+
+## Test Status (updated)
+- iteration_6.json: backend 10/10, frontend 7/8 (1 skipped = Playwright timing, feature confirmed). Canvas pointer-events fix + shared PDF + presence mentions + coupons-active all verified.
+- STILL MANUAL: live WebRTC media (local broadcast receiver feed + P2P calls) needs a real 2-browser / 2-device test; likely-cause fixes applied. Cross-network reliability may need a TURN server.
+
 ## Deferred / Backlog (P1)
 - Real Razorpay live keys (orders + webhook)
 - Self-serve ad upload & scheduling for premium business users
